@@ -6,7 +6,9 @@
   "scripts": {
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "start": "expo start --dev-client"
+    "start": "expo start --dev-client",
+    "build:ios": "eas build --platform ios --profile production",
+    "submit:ios": "eas submit --platform ios --profile production --latest"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",

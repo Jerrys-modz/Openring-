@@ -5,6 +5,7 @@ const config: ExpoConfig = {
   slug: 'openring',
   version: '0.1.0',
   orientation: 'portrait',
+  icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
   ios: {
     // Change to an identifier registered under your Apple Developer team.

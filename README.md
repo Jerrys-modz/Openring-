@@ -23,6 +23,9 @@ system pairing prompt. The on-screen log shows every frame, and the System ID, s
 share it if authentication fails: the System ID -> MAC byte order is the main unknown, so
 the client tries several candidates (or paste a MAC override).
 
+## TestFlight
+See `docs/TESTFLIGHT.md` for internal testing (EAS build + submit, no Mac needed).
+
 ## What exists
 - `src/ble/RingClient.ts` — scan, connect, auth (tries MAC candidates), live HR polling
 - `App.tsx` — minimal screen: Connect, live bpm, frame log
