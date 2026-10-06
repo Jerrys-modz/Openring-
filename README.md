@@ -4,10 +4,29 @@ Local-first sync for RingConn smart rings: read the ring over Bluetooth LE from 
 Expo / React Native app and write the data to Apple Health, so it flows into
 SparkyFitness (or anything else that reads HealthKit). No RingConn account or cloud.
 
-Status: **milestone 1 done** — the protocol core (`src/protocol/`) is pure TypeScript with
-no dependencies and is unit-tested. There is no app or BLE code yet; see `docs/PLAN.md`.
+Status: **milestone 2 code written, untested on a ring** — protocol core (`src/protocol/`,
+pure TypeScript, unit-tested) plus an Expo dev-client app that scans, reads the MAC,
+authenticates and shows live heart rate. See `docs/PLAN.md`.
+
+## Run it on an iPhone (no Mac needed, paid Apple Developer account required)
+```bash
+npm install
+npm i -g eas-cli && eas login
+eas device:create                 # register your iPhone (open the link on the phone)
+eas build --profile development --platform ios
+# install the build from the QR/link on the phone, enable Developer Mode, then:
+npm start                         # expo start --dev-client
+```
+Change `ios.bundleIdentifier` in `app.config.ts` first. Take the ring off the charger and
+close the RingConn app (the ring accepts one connection). The first connection triggers a
+system pairing prompt. The on-screen log shows every frame, and the System ID, so please
+share it if authentication fails: the System ID -> MAC byte order is the main unknown, so
+the client tries several candidates (or paste a MAC override).
 
 ## What exists
+- `src/ble/RingClient.ts` — scan, connect, auth (tries MAC candidates), live HR polling
+- `App.tsx` — minimal screen: Connect, live bpm, frame log
+- `sysid.ts` — System ID (0x2A23) to MAC candidates
 - `sm3.ts` — SM3 hash (GB/T 32905), checked against the standard vectors and OpenSSL
 - `frames.ts` — command building, XOR-checked response parsing, auth handshake, history cursor
 - `records.ts` — decoders for bulk activity/sleep records, status descriptor, live HR, end-of-history
@@ -27,7 +46,7 @@ skin-temperature field encoding, and how bulk pages split into 23-byte records.
 
 ## Roadmap
 1. ~~Protocol core + tests~~
-2. Expo dev-client app: scan, connect, read MAC, authenticate, live HR
+2. Expo dev-client app: scan, connect, read MAC, authenticate, live HR (written, needs a ring test)
 3. History drain over both channels
 4. HealthKit writes with dedupe
 5. Sleep stages, resting HR

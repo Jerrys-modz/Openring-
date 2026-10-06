@@ -121,3 +121,29 @@ describe('records', () => {
     expect(parseEndOfHistory(bytes('87 00 00'))).toBeNull();
   });
 });
+
+import { macCandidatesFromSystemId } from './sysid';
+import { base64ToBytes, bytesToBase64 } from '../util/base64';
+
+describe('system id', () => {
+  it('derives MAC candidates from an EUI-64 style System ID', () => {
+    const id = Uint8Array.of(0x33, 0x22, 0x11, 0xff, 0xfe, 0xcc, 0xbb, 0xaa);
+    const hexes = macCandidatesFromSystemId(id).map((m) => Buffer.from(m).toString('hex'));
+    expect(hexes[0]).toBe('aabbcc112233');
+    expect(new Set(hexes).size).toBe(hexes.length);
+  });
+  it('passes through 6-byte ids and rejects other lengths', () => {
+    expect(macCandidatesFromSystemId(Uint8Array.of(1, 2, 3, 4, 5, 6))).toHaveLength(2);
+    expect(macCandidatesFromSystemId(Uint8Array.of(1, 2))).toEqual([]);
+  });
+});
+
+describe('base64', () => {
+  it('round-trips and matches Buffer', () => {
+    for (let n = 0; n < 12; n++) {
+      const b = Uint8Array.from({ length: n }, (_, i) => (i * 37 + 11) & 0xff);
+      expect(bytesToBase64(b)).toBe(Buffer.from(b).toString('base64'));
+      expect(Array.from(base64ToBytes(bytesToBase64(b)))).toEqual(Array.from(b));
+    }
+  });
+});
