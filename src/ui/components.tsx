@@ -8,7 +8,9 @@ export function Btn({ title, onPress, disabled, variant = 'secondary', c }: {
   title: string; onPress: () => void; disabled?: boolean; variant?: Variant; c: Palette;
 }) {
   const filled = variant === 'primary';
-  const color = filled ? c.onAccent : variant === 'danger' ? c.danger : c.accent;
+  // A disabled filled button becomes a quiet grey pill instead of a dimmed accent colour.
+  const quiet = filled && disabled;
+  const color = quiet ? c.muted : filled ? c.onAccent : variant === 'danger' ? c.danger : c.accent;
   return (
     <Pressable
       onPress={onPress}
@@ -17,9 +19,9 @@ export function Btn({ title, onPress, disabled, variant = 'secondary', c }: {
         {
           flex: variant === 'ghost' ? undefined : 1, paddingVertical: variant === 'ghost' ? 6 : 12, paddingHorizontal: 10,
           borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: filled ? c.accent : 'transparent',
+          backgroundColor: quiet ? c.border : filled ? c.accent : 'transparent',
           borderWidth: variant === 'ghost' || filled ? 0 : 1, borderColor: variant === 'danger' ? c.danger : c.border,
-          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+          opacity: quiet ? 1 : disabled ? 0.4 : pressed ? 0.7 : 1,
         },
       ]}
     >

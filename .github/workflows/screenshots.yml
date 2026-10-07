@@ -114,7 +114,7 @@ jobs:
             # Every tab with sample values. The text of the demo-mode file picks the tab.
             DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)
             mkdir -p "$DATA/Documents"
-            for TAB in today history health log; do
+            for TAB in today history health health-setup log; do
               echo "$TAB" > "$DATA/Documents/demo-mode"
               xcrun simctl launch "$UDID" "$BUNDLE_ID"
               sleep 8

@@ -8,12 +8,14 @@ export type TabName = 'today' | 'history' | 'health' | 'log';
  * values (a simulator has no ring and no Bluetooth). Its text picks the tab to show. Cosmetic
  * only: nothing is stored or sent. Returns null when the file is absent.
  */
-export function readDemoTab(): TabName | null {
+export function readDemoTab(): { tab: TabName; healthSetup: boolean } | null {
   try {
     const f = new File(Paths.document, 'demo-mode');
     if (!f.exists) return null;
     const t = f.textSync().trim();
-    return t === 'history' || t === 'health' || t === 'log' ? t : 'today';
+    // `health-setup` shows the Health tab before access has been granted.
+    if (t === 'health-setup') return { tab: 'health', healthSetup: true };
+    return { tab: t === 'history' || t === 'health' || t === 'log' ? t : 'today', healthSetup: false };
   } catch {
     return null;
   }

@@ -36,9 +36,10 @@ const TABS: { key: TabName; label: string }[] = [
 export default function App() {
   const c = usePalette();
   const s = useMemo(() => makeStyles(c), [c]);
-  const [demoTab] = useState(readDemoTab);
-  const demo = demoTab !== null;
-  const [tab, setTab] = useState<TabName>(demoTab ?? 'today');
+  const [demoState] = useState(readDemoTab);
+  const demo = demoState !== null;
+  const healthSetup = demoState?.healthSetup ?? false;
+  const [tab, setTab] = useState<TabName>(demoState?.tab ?? 'today');
   const [connected, setConnected] = useState(demo);
   const managerRef = useRef<BleManager | null>(null);
   managerRef.current ??= new BleManager();
@@ -66,7 +67,7 @@ export default function App() {
   const [stored, setStored] = useState(() => index.size);
 
   // Apple Health. The ledger of written keys is a Set that is mutated, so `writtenVersion` re-renders.
-  const [access, setAccess] = useState<HealthAccess>(demo ? 'allowed' : 'not-asked');
+  const [access, setAccess] = useState<HealthAccess>(demo && !healthSetup ? 'allowed' : 'not-asked');
   const [settings, setSettings] = useState<Settings>(() => (demo ? { healthHeartRate: true, healthSteps: false } : loadSettings()));
   const [written] = useState<Set<string>>(() => {
     try {
@@ -77,7 +78,7 @@ export default function App() {
   });
   const [writtenVersion, setWrittenVersion] = useState(0);
   const [healthBusy, setHealthBusy] = useState(false);
-  const [lastWrite, setLastWrite] = useState<string | null>(demo ? '48 heart-rate samples, 6:26 AM' : null);
+  const [lastWrite, setLastWrite] = useState<string | null>(demo && !healthSetup ? '48 heart-rate samples, 6:26 AM' : null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const live = useRef({ access, settings }); // read by the long-lived status callback
   const steps = useRef(new StepTracker(-new Date().getTimezoneOffset()));
@@ -101,8 +102,8 @@ export default function App() {
   const offsetMin = -new Date().getTimezoneOffset();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const pending = useMemo(() => pendingHeartRate(records, written, offsetMin), [records, writtenVersion, offsetMin]);
-  const writtenCount = demo ? 540 : written.size;
-  const pendingCount = demo ? 12 : pending.length;
+  const writtenCount = demo ? (healthSetup ? 0 : 540) : written.size;
+  const pendingCount = demo ? (healthSetup ? 552 : 12) : pending.length;
 
   const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
 
