@@ -39,3 +39,8 @@ jobs:
         run: |
           grep -q NSBluetoothAlwaysUsageDescription ios/*/Info.plist
           grep -q bluetooth-central ios/*/Info.plist
+      - name: Verify HealthKit entitlement and purpose strings landed
+        run: |
+          grep -q com.apple.developer.healthkit ios/*/*.entitlements
+          grep -q NSHealthUpdateUsageDescription ios/*/Info.plist
+          grep -q NSHealthShareUsageDescription ios/*/Info.plist

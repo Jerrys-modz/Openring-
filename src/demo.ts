@@ -1,7 +1,7 @@
 import { File, Paths } from 'expo-file-system';
 import { ActivityRecord, parseBulkActivityRecord } from './protocol';
 
-export type TabName = 'today' | 'history' | 'log';
+export type TabName = 'today' | 'history' | 'health' | 'log';
 
 /**
  * CI screenshots: a `demo-mode` file in the app's documents folder fills the app with sample
@@ -13,7 +13,7 @@ export function readDemoTab(): TabName | null {
     const f = new File(Paths.document, 'demo-mode');
     if (!f.exists) return null;
     const t = f.textSync().trim();
-    return t === 'history' || t === 'log' ? t : 'today';
+    return t === 'history' || t === 'health' || t === 'log' ? t : 'today';
   } catch {
     return null;
   }

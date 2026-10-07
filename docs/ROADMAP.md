@@ -27,9 +27,9 @@ Exit criterion: a 24 h drain produces plausible, time-correct heart rate and sle
 ## Phase B: Apple Health and Sparky (the main win)
 | # | Item | Status |
 |---|------|--------|
-| B1 | HealthKit permissions and capability (`@kingstinct/react-native-healthkit`) | ⬜ |
-| B2 | Write heart rate, resting HR, SpO2, respiratory rate, skin temperature, steps | ⬜ |
-| B3 | Dedupe with per-metric high-water marks; writes must be idempotent | ⬜ |
+| B1 | HealthKit permissions and capability (`@kingstinct/react-native-healthkit`) | 🟡 written, needs a device test |
+| B2 | Write heart rate (🟡 written) and steps (🟡 beta, live only); resting HR, SpO2, respiratory rate, skin temperature still to do | 🟡 |
+| B3 | Idempotent writes: local ledger plus HealthKit sync identifiers | 🟡 |
 | B4 | Sleep analysis samples (in bed / asleep), stages labelled as estimated | ⬜ |
 | B5 | HRV: write as SDNN only if clearly labelled; the ring reports RMSSD | ⬜ |
 | B6 | Verify end to end: ring -> Health -> SparkyFitness | ⬜ |
@@ -86,3 +86,10 @@ Things the vendor app does not do, or does not let you do:
 - Is the goal "ring data in Sparky" (Phases A, B, D) or a full replacement app (add C and E)?
 - Do you want sleep and readiness scores at all, or just the raw data in Health?
 - Android later, or iOS only?
+
+## Maintenance
+- **Expo SDK 58:** SDK 57 is the current stable release. SDK 58 is only a pre-release (React Native 0.88
+  release candidate); a trial in October 2026 failed (`jest-expo` 58 wants a React Native Jest preset
+  release candidate that npm does not resolve, and its tests crash) and cleared none of the audit
+  findings. Upgrade once SDK 58 is tagged `latest`, moving Expo, React Native, `jest-expo` and Jest 30
+  together. Dependabot skips npm major versions, so this will not be proposed automatically.

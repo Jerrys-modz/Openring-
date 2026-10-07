@@ -1,14 +1,18 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, Share, StyleSheet, Text, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
 import { TabName, demoRecords, readDemoTab } from './src/demo';
+import { HealthAccess, healthAccess, requestHealthAccess, saveHeartRate, saveSteps } from './src/health/healthkit';
+import { StepSample, StepTracker, pendingHeartRate } from './src/health/mapping';
 import { ActivityRecord, Channel, Descriptor, recordUnixSeconds } from './src/protocol';
 import { HistoryScreen } from './src/screens/HistoryScreen';
+import { HealthScreen } from './src/screens/HealthScreen';
 import { LogScreen } from './src/screens/LogScreen';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { appendRecord, loadRecordIndex, readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
+import { Settings, loadSettings, loadWritten, markWritten, saveSettings } from './src/store/healthStore';
 import { RecordIndex, recordsToCsv } from './src/store/recordIndex';
 import { TabBar } from './src/ui/components';
 import { usePalette } from './src/ui/theme';
@@ -25,6 +29,7 @@ const DEMO_LINES = [
 const TABS: { key: TabName; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'history', label: 'History' },
+  { key: 'health', label: 'Health' },
   { key: 'log', label: 'Log' },
 ];
 
@@ -59,11 +64,114 @@ export default function App() {
     }
   });
   const [stored, setStored] = useState(() => index.size);
+
+  // Apple Health. The ledger of written keys is a Set that is mutated, so `writtenVersion` re-renders.
+  const [access, setAccess] = useState<HealthAccess>(demo ? 'allowed' : 'not-asked');
+  const [settings, setSettings] = useState<Settings>(() => (demo ? { healthHeartRate: true, healthSteps: false } : loadSettings()));
+  const [written] = useState<Set<string>>(() => {
+    try {
+      return demo ? new Set<string>() : loadWritten();
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const [writtenVersion, setWrittenVersion] = useState(0);
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [lastWrite, setLastWrite] = useState<string | null>(demo ? '48 heart-rate samples, 6:26 AM' : null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const live = useRef({ access, settings }); // read by the long-lived status callback
+  const steps = useRef(new StepTracker(-new Date().getTimezoneOffset()));
   // `stored` changes whenever the index does, so it keys the sorted copy.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const records = useMemo(() => index.sorted(), [index, stored]);
 
+  useEffect(() => {
+    if (demo) return;
+    let cancelled = false;
+    void healthAccess().then((a) => {
+      if (cancelled) return;
+      live.current.access = a;
+      setAccess(a);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [demo]);
+
+  const offsetMin = -new Date().getTimezoneOffset();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pending = useMemo(() => pendingHeartRate(records, written, offsetMin), [records, writtenVersion, offsetMin]);
+  const writtenCount = demo ? 540 : written.size;
+  const pendingCount = demo ? 12 : pending.length;
+
   const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
+
+  const updateSettings = (next: Settings) => {
+    live.current.settings = next;
+    setSettings(next);
+    try {
+      saveSettings(next);
+    } catch {
+      // the toggle still works for this session
+    }
+  };
+
+  const allowHealth = async () => {
+    setHealthBusy(true);
+    setHealthError(null);
+    try {
+      const a = await requestHealthAccess();
+      live.current.access = a;
+      setAccess(a);
+      log(`Apple Health access: ${a}`);
+    } catch (e) {
+      setHealthError((e as Error).message);
+      log(`Health ERROR ${(e as Error).message}`);
+    } finally {
+      setHealthBusy(false);
+    }
+  };
+
+  /** Saves every heart-rate record not yet in Health. Safe to repeat: the ledger and HealthKit both dedupe. */
+  const writePending = async (source: ActivityRecord[]) => {
+    if (!live.current.settings.healthHeartRate || live.current.access !== 'allowed') return;
+    const todo = pendingHeartRate(source, written, -new Date().getTimezoneOffset());
+    if (!todo.length) return;
+    setHealthBusy(true);
+    setHealthError(null);
+    const saved: string[] = [];
+    try {
+      await saveHeartRate(todo, (smp) => {
+        saved.push(smp.key);
+        written.add(smp.key);
+      });
+      setLastWrite(`${saved.length} heart-rate sample${saved.length === 1 ? '' : 's'}, ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
+      log(`Health: saved ${saved.length} heart-rate samples`);
+    } catch (e) {
+      setHealthError((e as Error).message);
+      log(`Health ERROR ${(e as Error).message}`);
+    } finally {
+      try {
+        markWritten(saved);
+      } catch (e) {
+        log(`Health ledger ERROR ${(e as Error).message}`);
+      }
+      setWrittenVersion((v) => v + 1);
+      setHealthBusy(false);
+    }
+  };
+
+  const writeSteps = async (smp: StepSample | null) => {
+    if (!smp || !live.current.settings.healthSteps || live.current.access !== 'allowed' || written.has(smp.key)) return;
+    try {
+      await saveSteps(smp);
+      written.add(smp.key);
+      markWritten([smp.key]);
+      log(`Health: saved ${smp.steps} steps`);
+    } catch (e) {
+      log(`Health steps ERROR ${(e as Error).message}`);
+    }
+  };
 
   const connect = async () => {
     setBusy(true);
@@ -71,7 +179,10 @@ export default function App() {
     try {
       const c = new RingClient(manager, log);
       client.current = c;
-      c.onStatus = setStatus;
+      c.onStatus = (d) => {
+        setStatus(d);
+        if (live.current.settings.healthSteps) void writeSteps(steps.current.observe(d.stepsInBucket, Date.now() / 1000));
+      };
       log(`Bluetooth state: ${await manager.state()}`);
       await c.waitForPoweredOn();
       log('scanning for RingConn…');
@@ -123,6 +234,7 @@ export default function App() {
             ? `, ${new Date(Math.min(...times)).toLocaleString()} to ${new Date(Math.max(...times)).toLocaleString()}`
             : ''));
       }
+      await writePending(index.sorted());
       setLastSync(`${totalFresh} new record${totalFresh === 1 ? '' : 's'}, ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
     } catch (e) {
       log(`ERROR ${(e as Error).message}`);
@@ -155,6 +267,7 @@ export default function App() {
 
   const disconnect = async () => {
     stopHr.current?.();
+    void writeSteps(steps.current.peek());
     await client.current?.disconnect();
     setHr(null);
     setConnected(false);
@@ -189,6 +302,23 @@ export default function App() {
             />
           )}
           {tab === 'history' && <HistoryScreen c={c} records={records} />}
+          {tab === 'health' && (
+            <HealthScreen
+              c={c}
+              access={access}
+              heartRateOn={settings.healthHeartRate}
+              stepsOn={settings.healthSteps}
+              onHeartRate={(v) => updateSettings({ ...settings, healthHeartRate: v })}
+              onSteps={(v) => updateSettings({ ...settings, healthSteps: v })}
+              onAllow={allowHealth}
+              onWriteNow={() => void writePending(records)}
+              busy={healthBusy}
+              written={writtenCount}
+              pending={pendingCount}
+              lastWrite={lastWrite}
+              error={healthError}
+            />
+          )}
           {tab === 'log' && (
             <LogScreen
               c={c}

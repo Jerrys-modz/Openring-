@@ -17,6 +17,15 @@ const config: ExpoConfig = {
   plugins: [
     'expo-dev-client',
     [
+      '@kingstinct/react-native-healthkit',
+      {
+        NSHealthShareUsageDescription: "OpenRing only saves your ring's data to Health. It does not read your other health data.",
+        NSHealthUpdateUsageDescription: 'OpenRing saves heart rate and steps from your RingConn ring to Apple Health.',
+        // No background delivery: nothing here observes Health, so skip that entitlement.
+        background: false,
+      },
+    ],
+    [
       'react-native-ble-plx',
       {
         modes: ['central'],
