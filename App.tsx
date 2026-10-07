@@ -48,10 +48,10 @@ export default function App() {
 
   return (
     <SafeAreaView style={s.root}>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       <Text style={s.title}>OpenRing</Text>
       <Text style={s.hr}>{hr ?? '--'} <Text style={s.unit}>bpm</Text></Text>
-      <TextInput style={s.input} placeholder="MAC override (optional, 12 hex)" autoCapitalize="none"
+      <TextInput style={s.input} placeholder="MAC override (optional, 12 hex)" placeholderTextColor="#888" autoCapitalize="none"
         value={macOverride} onChangeText={setMacOverride} />
       <View style={s.row}>
         <Button title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
@@ -64,11 +64,11 @@ export default function App() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, padding: 16, paddingTop: 48 },
-  title: { fontSize: 24, fontWeight: '600' },
-  hr: { fontSize: 56, fontWeight: '700', marginVertical: 8 },
-  unit: { fontSize: 18, fontWeight: '400' },
-  input: { borderWidth: 1, borderColor: '#999', borderRadius: 6, padding: 8, marginBottom: 8 },
+  root: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: '#fff' },
+  title: { fontSize: 24, fontWeight: '600', color: '#000' },
+  hr: { fontSize: 56, fontWeight: '700', marginVertical: 8, color: '#000' },
+  unit: { fontSize: 18, fontWeight: '400', color: '#000' },
+  input: { borderWidth: 1, borderColor: '#999', borderRadius: 6, padding: 8, marginBottom: 8, color: '#000' },
   row: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
-  log: { fontFamily: 'Menlo', fontSize: 11 },
+  log: { fontFamily: 'Menlo', fontSize: 11, color: '#000' },
 });
