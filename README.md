@@ -36,6 +36,8 @@ mode. `eas-build.yml` is a manual cloud build (+ optional TestFlight submit); it
 ## TestFlight
 See `docs/TESTFLIGHT.md` for internal testing (EAS build + submit, no Mac needed).
 
+
+
 ## What exists
 - `src/ble/RingClient.ts` — scan, connect, auth (tries MAC candidates), live HR polling
 - `App.tsx` — minimal screen: Connect, live bpm, frame log
