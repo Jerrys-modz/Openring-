@@ -123,6 +123,8 @@ export class RingClient {
     channel: Channel,
     sinceUnix: number,
     onRecord: (r: ActivityRecord) => void,
+    /** Must persist the frame; if it throws, the frame is not ACKed and the drain stops. */
+    onFrame: (frame: Bytes) => void = () => undefined,
   ): Promise<{ frames: number; records: number; ended: boolean }> {
     const cursor = toCursor(sinceUnix);
     this.log(`history: open channel ${channel} cursor ${cursor}`);
@@ -142,6 +144,12 @@ export class RingClient {
         continue;
       }
       idle = 0;
+      try {
+        onFrame(f);
+      } catch (e) {
+        this.log(`history: could not save frame, not ACKing: ${(e as Error).message}`);
+        return { frames, records, ended: false };
+      }
       if (f[0] === Resp.EndOfHistory) {
         this.log(`history: end after ${frames} frames, ${records} records`);
         return { frames, records, ended: true };

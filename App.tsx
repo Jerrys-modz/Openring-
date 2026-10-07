@@ -4,6 +4,7 @@ import { Button, FlatList, SafeAreaView, Share, StyleSheet, Text, TextInput, Vie
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
 import { ActivityRecord, Channel } from './src/protocol';
+import { readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
 
 export default function App() {
   const managerRef = useRef<BleManager | null>(null);
@@ -51,7 +52,7 @@ export default function App() {
       const since = Math.floor(Date.now() / 1000) - 24 * 3600;
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
-        const res = await c.drainHistory(ch, since, (r) => got.push(r));
+        const res = await c.drainHistory(ch, since, (r) => got.push(r), saveHistoryFrame);
         const times = got.map((r) => r.unixSeconds * 1000);
         const hrs = got.filter((r) => r.heartRate !== null).length;
         log(`${name}: ${res.records} records (${hrs} with HR) in ${res.frames} frames, ended=${res.ended}` +
@@ -76,6 +77,13 @@ export default function App() {
     await Share.share({ message: text });
   };
 
+  /** Everything the ring has ever sent us (raw frames), for export. */
+  const shareData = async () => {
+    const data = readHistoryLines();
+    log(`exporting ${data.length} saved frames`);
+    await Share.share({ message: data.join('\n') || 'no saved history yet' });
+  };
+
   const disconnect = async () => {
     stopHr.current?.();
     await client.current?.disconnect();
@@ -97,6 +105,7 @@ export default function App() {
       </View>
       <View style={s.row}>
         <Button title="Share log" onPress={shareLog} />
+        <Button title="Share data" onPress={shareData} />
         <Button title="Clear log" onPress={() => setLines([])} />
       </View>
       <FlatList data={lines} keyExtractor={(_, i) => String(i)}

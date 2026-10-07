@@ -37,14 +37,27 @@ Anything not listed here is still an assumption from the protocol notes in `docs
 - The ring keeps pushing `15 ...` live-HR frames and `10/87` descriptors while a drain runs, even
   after we stop polling. Ignore them.
 
+## Confirmed: the ring's resume pointer (drains are destructive)
+- A second drain, 14 minutes after the first and with a cursor 24 h in the past, returned only
+  the 5 records after the last one of the first drain (150 s later). The ring keeps its own
+  pointer and does not resend records it has sent, whatever cursor we ask for.
+- Consequences: (1) every frame must be saved before it is ACKed (`src/store/historyStore.ts`;
+  the drain stops without ACKing if saving fails); (2) the vendor app shares this pointer, so
+  records drained by OpenRing before storage existed are not on the phone and the vendor app
+  may never see them.
+- With nothing new, the ring answers the sync-open (`82 00 00 82`) and then stays silent: no
+  `0x50`, no bulk frames. A drain that times out with 0 frames means "no new data".
+- The `0x50` end frame was byte-identical in both drains: `50 00 00` plus 6-byte entries
+  `<type> <flag> <timestamp:4>` at 02:43, 02:48, 02:49, 02:55, 03:37 and 03:43 that night and
+  17:36 the next day, plus one `17 05 39 05 3b 00` entry. Probably an event or sleep-episode log
+  (type `15`; flags `21`, `12`, `31`). Meaning not decoded.
+
 ## Not yet confirmed
-- **Awake channel (0x03):** the first test returned no bulk frames within ~7 s; a `0x50` frame
-  arrived about 25 s later, after we had given up. The drain now waits up to ~30 s. It may simply
-  have nothing new (the ring keeps its own resume pointer), or live mode may block it.
+- **Awake channel (0x03):** three drains over two sessions returned no bulk frames, even after
+  a 30 s wait. Either the vendor app already drained it, or it needs something else.
 - Meaning of the `0x50` event entries, and whether they are sleep stages.
+- Why the newest record was about 4 h old at sync time (data up to 17:57, sync at 22:01).
 - Skin temperature encoding, SpO2 and HRV values against the vendor app.
-- Whether the newest record is always a few hours old (the first drain ended about 4 h before
-  the sync), which would mean the ring flushes in batches.
 
 ## Privacy
 Do not commit the ring's MAC, System ID or captured frames that contain it.
