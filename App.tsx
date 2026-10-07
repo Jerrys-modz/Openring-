@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useRef, useState } from 'react';
-import { Button, FlatList, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Button, FlatList, SafeAreaView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
 import { ActivityRecord, Channel } from './src/protocol';
@@ -16,7 +16,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [macOverride, setMacOverride] = useState('');
 
-  const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 200));
+  const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
 
   const connect = async () => {
     setBusy(true);
@@ -66,6 +66,16 @@ export default function App() {
     }
   };
 
+  /** Whole log as text, oldest first. Drops other people's nearby devices and the ring's MAC. */
+  const shareLog = async () => {
+    const text = [...lines]
+      .reverse()
+      .filter((l) => !/ saw /.test(l) || /RingConn/.test(l))
+      .map((l) => l.replace(/(System ID|MAC candidate) [0-9a-fA-F]+/g, '$1 <redacted>'))
+      .join('\n');
+    await Share.share({ message: text });
+  };
+
   const disconnect = async () => {
     stopHr.current?.();
     await client.current?.disconnect();
@@ -84,6 +94,10 @@ export default function App() {
         <Button title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
         <Button title="Sync history" onPress={syncHistory} disabled={busy} />
         <Button title="Disconnect" onPress={disconnect} />
+      </View>
+      <View style={s.row}>
+        <Button title="Share log" onPress={shareLog} />
+        <Button title="Clear log" onPress={() => setLines([])} />
       </View>
       <FlatList data={lines} keyExtractor={(_, i) => String(i)}
         renderItem={({ item }) => <Text style={s.log}>{item}</Text>} />
