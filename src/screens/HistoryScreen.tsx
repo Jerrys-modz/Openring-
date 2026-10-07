@@ -25,9 +25,11 @@ export function HistoryScreen({ c, records }: { c: Palette; records: ActivityRec
     range: { fontSize: 15, color: c.text, marginTop: 4, marginBottom: 10 },
     chart: { height: CHART_HEIGHT, flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
     barSlot: { flex: 1, height: CHART_HEIGHT, justifyContent: 'flex-end' },
-    axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+    axis: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, marginRight: 36 },
     axisText: { fontSize: 11, color: c.muted },
-    yLabels: { position: 'absolute', right: 0, top: 0, height: CHART_HEIGHT, justifyContent: 'space-between', alignItems: 'flex-end' },
+    plotRow: { flexDirection: 'row' },
+    yGutter: { width: 30, height: CHART_HEIGHT, justifyContent: 'space-between', alignItems: 'flex-end', marginLeft: 6 },
+    gridLine: { position: 'absolute', left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: c.border },
     grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
     row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
     rowTime: { fontSize: 14, color: c.text, fontVariant: ['tabular-nums'] },
@@ -52,22 +54,28 @@ export function HistoryScreen({ c, records }: { c: Palette; records: ActivityRec
         <Text style={s.range}>
           {summary.last !== null ? `Until ${formatRingDay(summary.last)}, ${formatRingClock(summary.last)}` : ''}
         </Text>
-        <View>
-          <View style={s.chart}>
-            {buckets.map((b) => (
-              <View key={b.start} style={s.barSlot}>
-                <View
-                  style={{
-                    height: b.avg === null ? 2 : Math.max(3, ((b.avg - lo) / (hi - lo)) * CHART_HEIGHT),
-                    borderRadius: 2,
-                    backgroundColor: b.avg === null ? c.border : c.heart,
-                  }}
-                />
-              </View>
-            ))}
+        <View style={s.plotRow}>
+          <View style={{ flex: 1 }}>
+            <View style={[s.gridLine, { top: 0 }]} />
+            <View style={[s.gridLine, { top: CHART_HEIGHT / 2 }]} />
+            <View style={[s.gridLine, { top: CHART_HEIGHT - 1 }]} />
+            <View style={s.chart}>
+              {buckets.map((b) => (
+                <View key={b.start} style={s.barSlot}>
+                  <View
+                    style={{
+                      height: b.avg === null ? 2 : Math.max(3, ((b.avg - lo) / (hi - lo)) * CHART_HEIGHT),
+                      borderRadius: 2,
+                      backgroundColor: b.avg === null ? c.border : c.heart,
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
           </View>
-          <View style={s.yLabels} pointerEvents="none">
+          <View style={s.yGutter}>
             <Text style={s.axisText}>{hi}</Text>
+            <Text style={s.axisText}>{Math.round((hi + lo) / 2)}</Text>
             <Text style={s.axisText}>{lo}</Text>
           </View>
         </View>
