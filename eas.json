@@ -11,12 +11,28 @@
         "simulator": false
       }
     },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      }
+    },
+    "testflight": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
+    },
     "production": {
       "distribution": "store",
       "autoIncrement": true
     }
   },
   "submit": {
+    "testflight": {
+      "ios": {}
+    },
     "production": {
       "ios": {}
     }

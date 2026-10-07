@@ -7,6 +7,7 @@ const config: ExpoConfig = {
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
+  extra: { eas: { projectId: 'ef767628-eaaf-4b27-8e87-dfae908d062a' } },
   ios: {
     // Change to an identifier registered under your Apple Developer team.
     bundleIdentifier: 'com.jerrysmodz.openring',
