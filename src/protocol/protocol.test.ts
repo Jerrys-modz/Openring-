@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import {
   Channel, buildAck, buildAuthResponse, buildCommand, buildFetch, buildSyncOpen, fromCursor,
-  macFromHex, parseAuthChallenge, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
+  macFromHex, parseAuthChallenge, bulkRemaining, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, recordUnixSeconds, parseEndOfHistory,
   parseFrame, parseLiveHr, sm3, toCursor, xorBytes,
 } from './index';
 
@@ -78,10 +78,11 @@ describe('records', () => {
   it('decodes sleep-vitals records', () => {
     const r = parseBulkActivityRecord(record())!;
     expect(r).toMatchObject({
-      kind: 'sleep-vitals', counter: 0x96, heartRate: 58, hrvRmssdMs: 64,
+      kind: 'sleep-vitals', timestamp: 0x0c000096, heartRate: 58, hrvRmssdMs: 64,
       respiratoryRate: 15, spo2: 97, signalQuality: 9,
     });
-    expect(r.unixSeconds).toBe(1577793600 + 0x96);
+    expect(r.ringClockSeconds).toBe(1577793600 + 0x0c000096);
+    expect(recordUnixSeconds(r, -240)).toBe(1577793600 + 0x0c000096 + 4 * 3600);
   });
 
   it('treats SpO2 sentinels as activity epochs and low HR as unmeasured', () => {
@@ -109,6 +110,16 @@ describe('records', () => {
     });
     d[18] ^= 1;
     expect(parseDescriptor(d)).toBeNull();
+  });
+
+  it('decodes real status frames from a Gen 2 ring (19-byte 0x87 and 20-byte 0x10)', () => {
+    const expected = {
+      batteryPercent: 80, mode: 3, charging: false, stepsInBucket: 123,
+      skinTempC1: 29.2, skinTempC2: 30.5, batteryMv: 4147,
+    };
+    expect(parseDescriptor(bytes('87500300007b0124013100000000103300ff66'))).toEqual(expected);
+    expect(parseDescriptor(bytes('10500300007b0124013100000000103300ff00f1'))).toEqual(expected);
+    expect(parseDescriptor(bytes('10500300007b0124013100000000103300ff00f0'))).toBeNull(); // bad XOR
   });
 
   it('decodes live HR and ignores warm-up samples', () => {
@@ -145,5 +156,47 @@ describe('base64', () => {
       expect(bytesToBase64(b)).toBe(Buffer.from(b).toString('base64'));
       expect(Array.from(base64ToBytes(bytesToBase64(b)))).toEqual(Array.from(b));
     }
+  });
+});
+
+describe('bulk activity frame', () => {
+  // 4-byte big-endian timestamp (0x0c...), HR, then filler with the no-SpO2 sentinel.
+  const rec = (ts: number, hr: number) =>
+    Uint8Array.of((ts >>> 24) & 0xff, (ts >>> 16) & 0xff, (ts >>> 8) & 0xff, ts & 0xff, hr, 0, 0, 0, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const frame = (seq: number, ...recs: Uint8Array[]) =>
+    Uint8Array.from([0x4c, seq >> 8, seq & 0xff, ...recs.flatMap((r) => Array.from(r))]);
+
+  it('splits records after the 2-byte sequence header, 150 s apart', () => {
+    const out = parseBulkActivityFrame(frame(0, rec(0x0cba31c8, 79), rec(0x0cba325e, 80), rec(0x0cba32f4, 81), rec(0x0cba338a, 77)));
+    expect(out.map((r) => [r.timestamp, r.heartRate])).toEqual([
+      [0x0cba31c8, 79], [0x0cba325e, 80], [0x0cba32f4, 81], [0x0cba338a, 77],
+    ]);
+    expect(out[1]!.ringClockSeconds - out[0]!.ringClockSeconds).toBe(150);
+  });
+
+  it('drops a matching XOR trailer and still reads every record', () => {
+    const f = frame(0, rec(0x0cbaaaf4, 74), rec(0x0cbaab8a, 94));
+    const withTrailer = Uint8Array.from([...f, xorBytes(f)]);
+    expect(parseBulkActivityFrame(withTrailer).map((r) => r.heartRate)).toEqual([74, 94]);
+  });
+
+  it('does not misparse when a sequence byte happens to be 0x0c', () => {
+    const out = parseBulkActivityFrame(frame(0x000c, rec(0x0cb9618f, 60)));
+    expect(out.map((r) => r.timestamp)).toEqual([0x0cb9618f]);
+  });
+
+  it('accepts a 0x0d timestamp high byte', () => {
+    expect(parseBulkActivityFrame(frame(1, rec(0x0d000010, 61)))[0]!.timestamp).toBe(0x0d000010);
+  });
+
+  it('reads the remaining-record countdown from bulk headers', () => {
+    expect(bulkRemaining(frame(0x0172, rec(0x0cb95abe, 60)))).toBe(0x172);
+    expect(bulkRemaining(Uint8Array.of(0x47, 0x00, 0x39))).toBe(0x39);
+    expect(bulkRemaining(Uint8Array.of(0x50, 0, 0))).toBeNull();
+  });
+
+  it('ignores other frame ids and short frames', () => {
+    expect(parseBulkActivityFrame(Uint8Array.of(0x47, 1, 2, 3))).toEqual([]);
+    expect(parseBulkActivityFrame(Uint8Array.of(0x4c))).toEqual([]);
   });
 });

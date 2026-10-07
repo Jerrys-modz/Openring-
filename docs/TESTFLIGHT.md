@@ -44,7 +44,8 @@ iPhone, sign in with the same Apple ID, and install OpenRing.
 - Builds expire after 90 days; just upload a new one.
 - Internal testing requires no privacy policy URL or beta app description. External
   testers and public release do, and for HealthKit apps they need a privacy policy too.
-- When HealthKit lands (milestone 4) enable the HealthKit capability for the App ID and
-  add `NSHealthShareUsageDescription` / `NSHealthUpdateUsageDescription`; the next build
-  will need regenerated provisioning (EAS does this automatically).
+- HealthKit is in the app: the config plugin adds the `com.apple.developer.healthkit` entitlement and
+  both `NSHealth*UsageDescription` strings. The App ID needs the HealthKit capability and the
+  provisioning profile has to be regenerated to include it (EAS does both when it can sign in to
+  Apple; run `eas credentials` interactively if a non-interactive build cannot).
 - Bluetooth permission text and `bluetooth-central` background mode are already set.

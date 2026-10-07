@@ -1,0 +1,132 @@
+name: Screenshots
+
+# Builds the iOS app for the simulator and screenshots it in light and dark mode, so UI changes
+# can be reviewed without a phone or a TestFlight build. Download the `screenshots` artifact from
+# the run page.
+#
+# The simulator has no ring and no Bluetooth, so a `demo-mode` file is dropped into the app's
+# documents folder, which makes the app fill the screen with sample values (see src/demo.ts).
+#
+# Runs on a macOS runner (free for public repositories). Triggered by hand, and on pull requests
+# that touch the UI or this workflow.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - App.tsx
+      - app.config.ts
+      - src/**
+      - .github/workflows/screenshots.yml
+
+concurrency:
+  group: screenshots-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prebuild iOS project
+        run: npx expo prebuild --platform ios
+
+      # Release, not Debug: a Debug build of expo-dev-client opens the dev launcher and waits for
+      # Metro instead of showing the app. Release bundles the JS into the app.
+      - name: Build for the simulator
+        run: |
+          set -euo pipefail
+          WS=$(ls -d ios/*.xcworkspace | head -1)
+          SCHEME=$(basename "$WS" .xcworkspace)
+          xcodebuild \
+            -workspace "$WS" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+          ls build/Build/Products/Release-iphonesimulator
+
+      - name: Capture screenshots
+        run: |
+          set -euo pipefail
+          APP=$(ls -d build/Build/Products/Release-iphonesimulator/*.app | head -1)
+          BUNDLE_ID=com.jerrysmodz.openring
+          mkdir -p screenshots
+
+          # The newest iPhone Pro on the image, else the newest iPhone.
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          found = []
+          for runtime, entries in json.load(sys.stdin)['devices'].items():
+              if 'iOS' not in runtime:
+                  continue
+              for e in entries:
+                  if e['name'].startswith('iPhone'):
+                      found.append(('Pro' in e['name'], runtime, e['name'], e['udid']))
+          found.sort()
+          print(found[-1][3] if found else '')
+          ")
+          if [ -z "$UDID" ]; then
+            echo 'No iPhone simulator on this image:'
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+
+          for MODE in light dark; do
+            # The switch is asynchronous and was occasionally not applied by launch time (a run
+            # produced "dark" screenshots in light mode), so wait until it reads back, then settle.
+            xcrun simctl ui "$UDID" appearance "$MODE"
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              [ "$(xcrun simctl ui "$UDID" appearance)" = "$MODE" ] && break
+              sleep 1
+            done
+            sleep 3
+            echo "Appearance is now: $(xcrun simctl ui "$UDID" appearance)"
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
+
+            # What a fresh launch looks like. The first launch also creates the data folder.
+            xcrun simctl launch "$UDID" "$BUNDLE_ID"
+            sleep 8
+            xcrun simctl io "$UDID" screenshot "screenshots/today-empty-$MODE.png"
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+
+            # Every tab with sample values. The text of the demo-mode file picks the tab.
+            DATA=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" data)
+            mkdir -p "$DATA/Documents"
+            for TAB in today history health health-setup log; do
+              echo "$TAB" > "$DATA/Documents/demo-mode"
+              xcrun simctl launch "$UDID" "$BUNDLE_ID"
+              sleep 8
+              xcrun simctl io "$UDID" screenshot "screenshots/$TAB-demo-$MODE.png"
+              xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+            done
+            rm -f "$DATA/Documents/demo-mode"
+          done
+          ls -la screenshots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/*.png
+          if-no-files-found: error
