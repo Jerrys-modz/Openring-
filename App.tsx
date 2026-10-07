@@ -52,9 +52,12 @@ export default function App() {
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
         const res = await c.drainHistory(ch, since, (r) => got.push(r));
-        const counters = got.map((r) => r.counter);
-        log(`${name}: ${res.records} records in ${res.frames} frames, ended=${res.ended}` +
-          (counters.length ? `, counters ${Math.min(...counters)}..${Math.max(...counters)}` : ''));
+        const times = got.map((r) => r.unixSeconds * 1000);
+        const hrs = got.filter((r) => r.heartRate !== null).length;
+        log(`${name}: ${res.records} records (${hrs} with HR) in ${res.frames} frames, ended=${res.ended}` +
+          (times.length
+            ? `, ${new Date(Math.min(...times)).toLocaleString()} to ${new Date(Math.max(...times)).toLocaleString()}`
+            : ''));
       }
     } catch (e) {
       log(`ERROR ${(e as Error).message}`);

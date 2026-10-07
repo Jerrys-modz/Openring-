@@ -137,7 +137,7 @@ export class RingClient {
         2000,
       ).catch(() => null);
       if (!f) {
-        if (++idle >= 3) break;
+        if (++idle >= 10) break; // the awake channel answered ~25 s late in the first ring test
         await this.write(buildFetch());
         continue;
       }

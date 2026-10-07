@@ -78,10 +78,10 @@ describe('records', () => {
   it('decodes sleep-vitals records', () => {
     const r = parseBulkActivityRecord(record())!;
     expect(r).toMatchObject({
-      kind: 'sleep-vitals', counter: 0x96, heartRate: 58, hrvRmssdMs: 64,
+      kind: 'sleep-vitals', timestamp: 0x0c000096, heartRate: 58, hrvRmssdMs: 64,
       respiratoryRate: 15, spo2: 97, signalQuality: 9,
     });
-    expect(r.unixSeconds).toBe(1577793600 + 0x96);
+    expect(r.unixSeconds).toBe(1577793600 + 0x0c000096);
   });
 
   it('treats SpO2 sentinels as activity epochs and low HR as unmeasured', () => {
@@ -149,18 +149,27 @@ describe('base64', () => {
 });
 
 describe('bulk activity frame', () => {
-  const rec = (counter: number, hr: number) =>
-    Uint8Array.of(0x0c, (counter >> 16) & 0xff, (counter >> 8) & 0xff, counter & 0xff, hr, 0, 0, 0, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-  const frame = (...recs: Uint8Array[]) => Uint8Array.from([0x4c, ...recs.flatMap((r) => Array.from(r))]);
+  // 4-byte big-endian timestamp (0x0c...), HR, then filler with the no-SpO2 sentinel.
+  const rec = (ts: number, hr: number) =>
+    Uint8Array.of((ts >>> 24) & 0xff, (ts >>> 16) & 0xff, (ts >>> 8) & 0xff, ts & 0xff, hr, 0, 0, 0, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const frame = (seq: number, ...recs: Uint8Array[]) =>
+    Uint8Array.from([0x4c, seq >> 8, seq & 0xff, ...recs.flatMap((r) => Array.from(r))]);
 
-  it('splits concatenated 23-byte records', () => {
-    const out = parseBulkActivityFrame(frame(rec(1000, 60), rec(1001, 62)));
-    expect(out.map((r) => [r.counter, r.heartRate])).toEqual([[1000, 60], [1001, 62]]);
+  it('splits records after the 2-byte sequence header, 150 s apart', () => {
+    const out = parseBulkActivityFrame(frame(0, rec(0x0cba31c8, 79), rec(0x0cba325e, 80), rec(0x0cba32f4, 81), rec(0x0cba338a, 77)));
+    expect(out.map((r) => [r.timestamp, r.heartRate])).toEqual([
+      [0x0cba31c8, 79], [0x0cba325e, 80], [0x0cba32f4, 81], [0x0cba338a, 77],
+    ]);
+    expect(out[1]!.unixSeconds - out[0]!.unixSeconds).toBe(150);
   });
 
-  it('skips a header before the first 0x0c marker', () => {
-    const f = Uint8Array.from([0x4c, 0x01, 0x02, ...rec(5, 70)]);
-    expect(parseBulkActivityFrame(f).map((r) => r.counter)).toEqual([5]);
+  it('does not misparse when a sequence byte happens to be 0x0c', () => {
+    const out = parseBulkActivityFrame(frame(0x000c, rec(0x0cb9618f, 60)));
+    expect(out.map((r) => r.timestamp)).toEqual([0x0cb9618f]);
+  });
+
+  it('accepts a 0x0d timestamp high byte', () => {
+    expect(parseBulkActivityFrame(frame(1, rec(0x0d000010, 61)))[0]!.timestamp).toBe(0x0d000010);
   });
 
   it('ignores other frame ids and short frames', () => {

@@ -5,7 +5,7 @@ Expo / React Native app and write the data to Apple Health, so it flows into
 SparkyFitness (or anything else that reads HealthKit). No RingConn account or cloud.
 
 Status: **milestone 2 verified on a RingConn Gen 2** (connect, auth, live heart rate);
-milestone 3 (history drain) is written but unverified. See `docs/HARDWARE_NOTES.md`.
+milestone 3 (history drain) works for the sleep channel; the awake channel is still unverified. See `docs/HARDWARE_NOTES.md`.
 
 The code is a protocol core (`src/protocol/`,
 pure TypeScript, unit-tested) plus an Expo dev-client app that scans, reads the MAC,
@@ -62,7 +62,7 @@ skin-temperature field encoding, and how bulk pages split into 23-byte records.
 ## Roadmap
 1. ~~Protocol core + tests~~
 2. ~~Expo dev-client app: scan, connect, read MAC, authenticate, live HR~~ (verified on hardware)
-3. History drain over both channels ("Sync history" button written, needs a ring test)
+3. History drain over both channels (sleep channel verified; awake channel still to confirm)
 4. HealthKit writes with dedupe
 5. Sleep stages, resting HR
 6. Background sync

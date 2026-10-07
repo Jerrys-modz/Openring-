@@ -5,11 +5,13 @@ type Bytes = Uint8Array;
 
 const NO_SPO2 = new Set([0x11, 0x12, 0x13]);
 const MIN_VALID_HR = 30;
+/** About Aug 2021 in cursor space; anything earlier cannot be a real RingConn record. */
+const MIN_TIMESTAMP = 0x03000000;
 
 export interface ActivityRecord {
   kind: 'sleep-vitals' | 'activity';
-  counter: number;
-  /** Unix seconds, assuming counter is in cursor space (verify on device). */
+  /** First 4 bytes of the record: big-endian seconds since the cursor epoch (confirmed on a Gen 2 ring). */
+  timestamp: number;
   unixSeconds: number;
   heartRate: number | null;
   hrvRmssdMs: number | null;
@@ -18,10 +20,15 @@ export interface ActivityRecord {
   spo2: number | null;
 }
 
-/** `0x4c` bulk record, 23 bytes, one per 150 s. */
+/**
+ * `0x4c` bulk record, 23 bytes, one per 150 s. Bytes 0-3 are a 4-byte big-endian timestamp
+ * (the top byte is 0x0c until late Nov 2026, then 0x0d, so it must not be treated as a marker).
+ */
 export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
-  if (rec.length < 21 || rec[0] !== 0x0c) return null;
-  const counter = ((rec[1] as number) << 16) | ((rec[2] as number) << 8) | (rec[3] as number);
+  if (rec.length < 21) return null;
+  const timestamp =
+    (((rec[0] as number) << 24) | ((rec[1] as number) << 16) | ((rec[2] as number) << 8) | (rec[3] as number)) >>> 0;
+  if (timestamp < MIN_TIMESTAMP) return null;
   const hr = rec[4] as number;
   const hrv = rec[5] as number;
   const rr = (rec[7] as number) / 8;
@@ -29,8 +36,8 @@ export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
   const sleepVitals = !NO_SPO2.has(spoRaw);
   return {
     kind: sleepVitals ? 'sleep-vitals' : 'activity',
-    counter,
-    unixSeconds: fromCursor(counter),
+    timestamp,
+    unixSeconds: fromCursor(timestamp),
     heartRate: hr >= MIN_VALID_HR ? hr : null,
     hrvRmssdMs: sleepVitals && hrv > 0 ? hrv : null,
     signalQuality: rec[6] as number,
@@ -89,22 +96,14 @@ export function parseEndOfHistory(data: Bytes): { eventCount: number } | null {
 const BULK_RECORD_LEN = 23;
 
 /**
- * Split a `0x4c` bulk frame into activity records. The exact page layout is not yet
- * verified on hardware: assume the bytes after the frame id are concatenated 23-byte
- * records, and fall back to scanning for the first `0x0c` marker if the length does not
- * divide evenly. Callers should log the raw frame so the layout can be confirmed.
+ * Split a `0x4c` bulk frame: `4c <seq:2 BE> <record:23>...` with no XOR trailer (confirmed on a
+ * Gen 2 ring: a 95-byte frame carries 4 records). Pages arrive newest first.
  */
 export function parseBulkActivityFrame(data: Bytes): ActivityRecord[] {
-  if (data.length < 1 + BULK_RECORD_LEN || data[0] !== Resp.BulkActivity) return [];
-  const body = data.subarray(1);
-  let start = 0;
-  if (body.length % BULK_RECORD_LEN !== 0) {
-    start = Array.prototype.indexOf.call(body, 0x0c);
-    if (start < 0) return [];
-  }
+  if (data.length < 3 + BULK_RECORD_LEN || data[0] !== Resp.BulkActivity) return [];
   const out: ActivityRecord[] = [];
-  for (let i = start; i + BULK_RECORD_LEN <= body.length; i += BULK_RECORD_LEN) {
-    const rec = parseBulkActivityRecord(body.subarray(i, i + BULK_RECORD_LEN));
+  for (let i = 3; i + BULK_RECORD_LEN <= data.length; i += BULK_RECORD_LEN) {
+    const rec = parseBulkActivityRecord(data.subarray(i, i + BULK_RECORD_LEN));
     if (rec) out.push(rec);
   }
   return out;
