@@ -20,7 +20,9 @@ export function TodayScreen({ c, hr, status, connected, busy, lastSync, stored, 
   const s = StyleSheet.create({
     hrRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
     heart: { fontSize: 28, marginRight: 8, color: c.heart },
-    hr: { fontSize: 64, fontWeight: '700', color: hr === null ? c.muted : c.text, fontVariant: ['tabular-nums'] },
+    hr: hr === null
+      ? { fontSize: 44, fontWeight: '300', color: c.muted }
+      : { fontSize: 64, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] },
     unit: { fontSize: 18, color: c.muted, marginLeft: 8 },
     hint: { fontSize: 13, color: c.muted, marginTop: 2 },
     grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
@@ -72,7 +74,7 @@ export function TodayScreen({ c, hr, status, connected, busy, lastSync, stored, 
         </Card>
       </ScrollView>
         <View style={s.row}>
-          <Btn c={c} variant="primary" title={busy ? 'Working…' : 'Connect'} onPress={onConnect} disabled={busy || connected} />
+          <Btn c={c} variant="primary" title={busy ? 'Working…' : connected ? 'Connected' : 'Connect'} onPress={onConnect} disabled={busy || connected} />
           <Btn c={c} title="Sync history" onPress={onSync} disabled={busy || !connected} />
           <Btn c={c} variant="danger" title="Disconnect" onPress={onDisconnect} disabled={!connected && !busy} />
         </View>
