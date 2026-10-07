@@ -12,6 +12,8 @@ export interface ActivityRecord {
   kind: 'sleep-vitals' | 'activity';
   /** First 4 bytes of the record: big-endian seconds since the cursor epoch (confirmed on a Gen 2 ring). */
   timestamp: number;
+  /** The undecoded 23 record bytes as hex, so stored data can be re-decoded if the layout turns out different. */
+  rawHex: string;
   /**
    * `timestamp` as unix seconds *if the ring's clock were UTC*. The ring stores device-local wall
    * time in this field, so this is NOT a real unix time; use `recordUnixSeconds`.
@@ -41,6 +43,7 @@ export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
   return {
     kind: sleepVitals ? 'sleep-vitals' : 'activity',
     timestamp,
+    rawHex: Array.from(rec.subarray(0, 23), (b) => b.toString(16).padStart(2, '0')).join(''),
     ringClockSeconds: fromCursor(timestamp),
     heartRate: hr >= MIN_VALID_HR ? hr : null,
     hrvRmssdMs: sleepVitals && hrv > 0 ? hrv : null,
@@ -72,12 +75,12 @@ export interface Descriptor {
 
 const tempC = (raw: number): number | null => (raw >= 200 && raw <= 450 ? raw / 10 : null);
 
-/** `0x10` / `0x87` status descriptor, 19 bytes with XOR trailer. */
+/** `0x87` status descriptor (19 bytes) or `0x10` (20 bytes, one extra byte), each ending in an XOR trailer. */
 export function parseDescriptor(data: Bytes): Descriptor | null {
-  if (data.length !== 19) return null;
+  if (data.length !== 19 && data.length !== 20) return null;
   const id = data[0] as number;
   if (id !== Resp.Descriptor && id !== Resp.DescriptorAlt) return null;
-  if (xorBytes(data.subarray(0, 18)) !== data[18]) return null;
+  if (xorBytes(data.subarray(0, data.length - 1)) !== data[data.length - 1]) return null;
   const u16 = (i: number) => ((data[i] as number) << 8) | (data[i + 1] as number);
   const mode = data[2] as number;
   return {

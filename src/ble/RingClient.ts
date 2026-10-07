@@ -3,7 +3,7 @@ import {
   DEVICE_NAME_PREFIX, DIS_SERVICE_UUID, DIS_SYSTEM_ID_UUID, NOTIFY_CHAR_UUID, Resp,
   SERVICE_UUID, WRITE_CHAR_UUID, buildAuthResponse, buildLiveHrMode, buildLiveHrPoll,
   buildCommand, macCandidatesFromSystemId, parseAuthChallenge, parseLiveHr,
-  ActivityRecord, Channel, buildAck, bulkRemaining, buildFetch, buildSyncOpen, parseBulkActivityFrame, toCursor,
+  ActivityRecord, Channel, Descriptor, parseDescriptor, buildAck, bulkRemaining, buildFetch, buildSyncOpen, parseBulkActivityFrame, toCursor,
 } from '../protocol';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../util/base64';
 
@@ -14,6 +14,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Connects to a RingConn ring, authenticates, and streams live heart rate. */
 export class RingClient {
+  /** Called for every battery/steps/temperature status frame the ring pushes. */
+  onStatus?: (d: Descriptor) => void;
   private device: Device | null = null;
   private sub: Subscription | null = null;
   private inbox: Bytes[] = [];
@@ -63,6 +65,8 @@ export class RingClient {
       if (err || !ch?.value) { if (err) this.log(`notify error: ${err.message}`); return; }
       const data = base64ToBytes(ch.value);
       this.log(`<- ${bytesToHex(data)}`);
+      const status = parseDescriptor(data);
+      if (status) this.onStatus?.(status);
       this.dispatch(data);
     });
 
@@ -189,7 +193,10 @@ export class RingClient {
   private dispatch(data: Bytes): void {
     const i = this.waiters.findIndex((w) => w.pred(data));
     if (i >= 0) this.waiters.splice(i, 1)[0]!.resolve(data);
-    else this.inbox.push(data);
+    else {
+      this.inbox.push(data);
+      if (this.inbox.length > 500) this.inbox.shift(); // the ring pushes status and live frames all the time
+    }
   }
 
   private waitFor(pred: (b: Bytes) => boolean, timeoutMs: number): Promise<Bytes> {

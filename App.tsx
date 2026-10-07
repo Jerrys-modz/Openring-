@@ -3,8 +3,9 @@ import { useRef, useState } from 'react';
 import { Button, FlatList, SafeAreaView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
-import { ActivityRecord, Channel, recordUnixSeconds } from './src/protocol';
-import { readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
+import { ActivityRecord, Channel, Descriptor, recordUnixSeconds } from './src/protocol';
+import { appendRecord, loadRecordIndex, readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
+import { RecordIndex, recordsToCsv } from './src/store/recordIndex';
 
 export default function App() {
   const managerRef = useRef<BleManager | null>(null);
@@ -16,6 +17,15 @@ export default function App() {
   const [hr, setHr] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [macOverride, setMacOverride] = useState('');
+  const [status, setStatus] = useState<Descriptor | null>(null);
+  const [index] = useState<RecordIndex>(() => {
+    try {
+      return loadRecordIndex();
+    } catch {
+      return new RecordIndex();
+    }
+  });
+  const [stored, setStored] = useState(() => index.size);
 
   const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
 
@@ -25,6 +35,7 @@ export default function App() {
     try {
       const c = new RingClient(manager, log);
       client.current = c;
+      c.onStatus = setStatus;
       log(`Bluetooth state: ${await manager.state()}`);
       await c.waitForPoweredOn();
       log('scanning for RingConn…');
@@ -53,12 +64,21 @@ export default function App() {
       const since = Math.floor(Date.now() / 1000);
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
-        const res = await c.drainHistory(ch, since, (r) => got.push(r), saveHistoryFrame);
+        let fresh = 0;
+        const res = await c.drainHistory(ch, since, (r) => {
+          got.push(r);
+          if (!index.has(r.timestamp)) {
+            appendRecord(r); // throws on failure, so the drain stops before ACKing
+            index.add(r);
+            fresh++;
+          }
+        }, saveHistoryFrame);
+        setStored(index.size);
         // The ring stores local wall-clock time; assume it is in this phone's zone.
         const offsetMin = -new Date().getTimezoneOffset();
         const times = got.map((r) => recordUnixSeconds(r, offsetMin) * 1000);
         const hrs = got.filter((r) => r.heartRate !== null).length;
-        log(`${name}: ${res.records} records (${hrs} with HR) in ${res.frames} frames, ended=${res.ended}` +
+        log(`${name}: ${res.records} records (${fresh} new, ${hrs} with HR) in ${res.frames} frames, ended=${res.ended}, ${index.size} stored` +
           (times.length
             ? `, ${new Date(Math.min(...times)).toLocaleString()} to ${new Date(Math.max(...times)).toLocaleString()}`
             : ''));
@@ -87,6 +107,11 @@ export default function App() {
     await Share.share({ message: data.join('\n') || 'no saved history yet' });
   };
 
+  const shareCsv = async () => {
+    log(`exporting ${index.size} stored records as CSV`);
+    await Share.share({ message: recordsToCsv(index.sorted()) });
+  };
+
   const disconnect = async () => {
     stopHr.current?.();
     await client.current?.disconnect();
@@ -99,6 +124,12 @@ export default function App() {
       <StatusBar style="dark" />
       <Text style={s.title}>OpenRing</Text>
       <Text style={s.hr}>{hr ?? '--'} <Text style={s.unit}>bpm</Text></Text>
+      <Text style={s.status}>
+        {status
+          ? `Battery ${status.batteryPercent}% (${(status.batteryMv / 1000).toFixed(2)} V) · mode ${status.mode}${status.charging ? ' (charging)' : ''}\n` +
+            `Steps this quarter-hour ${status.stepsInBucket} · skin ${status.skinTempC1 ?? '--'} / ${status.skinTempC2 ?? '--'} °C`
+          : 'Ring status: connect to read battery, steps and skin temperature'}
+      </Text>
       <TextInput style={s.input} placeholder="MAC override (optional, 12 hex)" placeholderTextColor="#888" autoCapitalize="none"
         value={macOverride} onChangeText={setMacOverride} />
       <View style={s.row}>
@@ -108,8 +139,11 @@ export default function App() {
       </View>
       <View style={s.row}>
         <Button title="Share log" onPress={shareLog} />
-        <Button title="Share data" onPress={shareData} />
         <Button title="Clear log" onPress={() => setLines([])} />
+      </View>
+      <View style={s.row}>
+        <Button title="Share frames" onPress={shareData} />
+        <Button title={`Share CSV (${stored})`} onPress={shareCsv} />
       </View>
       <FlatList data={lines} keyExtractor={(_, i) => String(i)}
         renderItem={({ item }) => <Text style={s.log}>{item}</Text>} />
@@ -124,5 +158,6 @@ const s = StyleSheet.create({
   unit: { fontSize: 18, fontWeight: '400', color: '#000' },
   input: { borderWidth: 1, borderColor: '#999', borderRadius: 6, padding: 8, marginBottom: 8, color: '#000' },
   row: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
+  status: { fontSize: 13, color: '#333', marginBottom: 8 },
   log: { fontFamily: 'Menlo', fontSize: 11, color: '#000' },
 });

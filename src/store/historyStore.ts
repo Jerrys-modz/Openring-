@@ -1,4 +1,6 @@
 import { File, Paths } from 'expo-file-system';
+import { ActivityRecord, parseBulkActivityRecord } from '../protocol';
+import { RecordIndex } from './recordIndex';
 
 /**
  * Append-only local copy of everything the ring sends during a history drain.
@@ -17,4 +19,31 @@ export function saveHistoryFrame(frame: Uint8Array): void {
 
 export function readHistoryLines(): string[] {
   return file.exists ? file.textSync().split('\n').filter(Boolean) : [];
+}
+
+const recordFile = new File(Paths.document, 'ring-records.jsonl');
+
+const hexToBytes = (hex: string): Uint8Array =>
+  Uint8Array.from((hex.match(/../g) ?? []).map((h) => parseInt(h, 16)));
+
+/** Decoded records saved so far (one `{ raw }` line each; re-decoded on load). */
+export function loadRecordIndex(): RecordIndex {
+  const index = new RecordIndex();
+  if (!recordFile.exists) return index;
+  for (const line of recordFile.textSync().split('\n')) {
+    if (!line) continue;
+    try {
+      const rec = parseBulkActivityRecord(hexToBytes((JSON.parse(line) as { raw: string }).raw));
+      if (rec) index.add(rec);
+    } catch {
+      // skip a damaged line; the raw frame log still has the data
+    }
+  }
+  return index;
+}
+
+/** Throws on failure so the drain stops before ACKing. */
+export function appendRecord(r: ActivityRecord): void {
+  if (!recordFile.exists) recordFile.create();
+  recordFile.write(`${JSON.stringify({ raw: r.rawHex })}\n`, { append: true });
 }

@@ -112,6 +112,16 @@ describe('records', () => {
     expect(parseDescriptor(d)).toBeNull();
   });
 
+  it('decodes real status frames from a Gen 2 ring (19-byte 0x87 and 20-byte 0x10)', () => {
+    const expected = {
+      batteryPercent: 80, mode: 3, charging: false, stepsInBucket: 123,
+      skinTempC1: 29.2, skinTempC2: 30.5, batteryMv: 4147,
+    };
+    expect(parseDescriptor(bytes('87500300007b0124013100000000103300ff66'))).toEqual(expected);
+    expect(parseDescriptor(bytes('10500300007b0124013100000000103300ff00f1'))).toEqual(expected);
+    expect(parseDescriptor(bytes('10500300007b0124013100000000103300ff00f0'))).toBeNull(); // bad XOR
+  });
+
   it('decodes live HR and ignores warm-up samples', () => {
     expect(parseLiveHr(withXor([0x15, 0x00, 72, 0x0a, 0xb0]))).toBe(72);
     expect(parseLiveHr(withXor([0x15, 0x00, 8, 0x0a, 0xb0]))).toBeNull();
