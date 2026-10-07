@@ -22,14 +22,20 @@ Anything not listed here is still an assumption from the protocol notes in `docs
 - Flow works as in `PLAN.md`: `02 00 <cursor:4> 00 01 00`, then `07 00 00`; the ring answers
   `82 00 00 82`, a descriptor, then bulk frames. ACK each with `cc 00 00` (`0x4c`) or
   `c7 00 00` (`0x47`). A `0x50` frame ends the drain. One 24 h drain was 76 frames, 362 records.
-- `0x4c` frame layout: `4c <remaining:2 BE> <record:23>...`, no XOR trailer (95 bytes = 4 records).
+- `0x4c` frame layout: `4c <remaining:2 BE> <record:23>... <xor>`; the XOR trailer is present (a
+  4-record frame is 96 bytes, and XOR of the first 95 bytes equals the last).
   The header counts the records still to come and reaches 0 on the last page (also true for `0x47`
   frames, in steps of 5). It can contain `0x0c`, so never scan for a marker byte.
 - **Record timestamp:** the first 4 bytes of each record are a big-endian count of seconds since
   2019-12-31 12:00 UTC, the same space as the cursor. The leading `0x0c` is the high byte, not a
   marker: it turns into `0x0d` around 2026-11-28, so never match on it. Consecutive records are
   150 s apart. Pages arrive oldest first, countdown to 0.
-- The cursor sent in sync-open is the same 4-byte format, so "since" is a plain unix time.
+- **Record time is device-local, the cursor is UTC.** The newest record was always ~4 min before
+  the sync, but showed 4 h early when read as UTC in US Eastern time (UTC-4): two syncs, 22:01 vs
+  last record 17:57, and 06:25 vs 02:21 as displayed. The ring writes local wall-clock time into
+  the record timestamp (OpenCircuit `PROTOCOL.md` also notes it lands on device-local time). Use
+  `recordUnixSeconds(record, utcOffsetMinutes)`. The sync-open cursor is a true UTC time and works
+  as `now - epoch`.
 - `0x47` PPG snapshot frames arrive too (many of them, before the `0x4c` frames); ACK and skip them.
 - The `0x50` end frame carried more than a count: `50 00 00` followed by 6-byte entries that
   contain record timestamps (`<type> <flag> 0c xx xx xx`). Possibly sleep-stage or event markers.
@@ -73,7 +79,9 @@ Anything not listed here is still an assumption from the protocol notes in `docs
 - **Awake channel (0x03):** three drains over two sessions returned no bulk frames, even after
   a 30 s wait. Either the vendor app already drained it, or it needs something else.
 - Meaning of the `0x50` event entries, and whether they are sleep stages.
-- Why the newest record was about 4 h old at sync time (data up to 17:57, sync at 22:01).
+- Which timezone the ring thinks it is in (we assume the phone's), and how DST changes show up.
+- Where the night went: a sync at 06:25 returned only 4 records (06:14 to 06:21 ring time), none
+  for the night. Possibly drained by the vendor app in between; otherwise on the awake channel.
 - Skin temperature encoding, SpO2 and HRV values against the vendor app.
 
 ## Privacy

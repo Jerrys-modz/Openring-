@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { Button, FlatList, SafeAreaView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
-import { ActivityRecord, Channel } from './src/protocol';
+import { ActivityRecord, Channel, recordUnixSeconds } from './src/protocol';
 import { readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
 
 export default function App() {
@@ -54,7 +54,9 @@ export default function App() {
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
         const res = await c.drainHistory(ch, since, (r) => got.push(r), saveHistoryFrame);
-        const times = got.map((r) => r.unixSeconds * 1000);
+        // The ring stores local wall-clock time; assume it is in this phone's zone.
+        const offsetMin = -new Date().getTimezoneOffset();
+        const times = got.map((r) => recordUnixSeconds(r, offsetMin) * 1000);
         const hrs = got.filter((r) => r.heartRate !== null).length;
         log(`${name}: ${res.records} records (${hrs} with HR) in ${res.frames} frames, ended=${res.ended}` +
           (times.length

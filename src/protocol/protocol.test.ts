@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import {
   Channel, buildAck, buildAuthResponse, buildCommand, buildFetch, buildSyncOpen, fromCursor,
-  macFromHex, parseAuthChallenge, bulkRemaining, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
+  macFromHex, parseAuthChallenge, bulkRemaining, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, recordUnixSeconds, parseEndOfHistory,
   parseFrame, parseLiveHr, sm3, toCursor, xorBytes,
 } from './index';
 
@@ -81,7 +81,8 @@ describe('records', () => {
       kind: 'sleep-vitals', timestamp: 0x0c000096, heartRate: 58, hrvRmssdMs: 64,
       respiratoryRate: 15, spo2: 97, signalQuality: 9,
     });
-    expect(r.unixSeconds).toBe(1577793600 + 0x0c000096);
+    expect(r.ringClockSeconds).toBe(1577793600 + 0x0c000096);
+    expect(recordUnixSeconds(r, -240)).toBe(1577793600 + 0x0c000096 + 4 * 3600);
   });
 
   it('treats SpO2 sentinels as activity epochs and low HR as unmeasured', () => {
@@ -160,7 +161,13 @@ describe('bulk activity frame', () => {
     expect(out.map((r) => [r.timestamp, r.heartRate])).toEqual([
       [0x0cba31c8, 79], [0x0cba325e, 80], [0x0cba32f4, 81], [0x0cba338a, 77],
     ]);
-    expect(out[1]!.unixSeconds - out[0]!.unixSeconds).toBe(150);
+    expect(out[1]!.ringClockSeconds - out[0]!.ringClockSeconds).toBe(150);
+  });
+
+  it('drops a matching XOR trailer and still reads every record', () => {
+    const f = frame(0, rec(0x0cbaaaf4, 74), rec(0x0cbaab8a, 94));
+    const withTrailer = Uint8Array.from([...f, xorBytes(f)]);
+    expect(parseBulkActivityFrame(withTrailer).map((r) => r.heartRate)).toEqual([74, 94]);
   });
 
   it('does not misparse when a sequence byte happens to be 0x0c', () => {

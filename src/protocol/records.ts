@@ -12,7 +12,11 @@ export interface ActivityRecord {
   kind: 'sleep-vitals' | 'activity';
   /** First 4 bytes of the record: big-endian seconds since the cursor epoch (confirmed on a Gen 2 ring). */
   timestamp: number;
-  unixSeconds: number;
+  /**
+   * `timestamp` as unix seconds *if the ring's clock were UTC*. The ring stores device-local wall
+   * time in this field, so this is NOT a real unix time; use `recordUnixSeconds`.
+   */
+  ringClockSeconds: number;
   heartRate: number | null;
   hrvRmssdMs: number | null;
   signalQuality: number;
@@ -37,7 +41,7 @@ export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
   return {
     kind: sleepVitals ? 'sleep-vitals' : 'activity',
     timestamp,
-    unixSeconds: fromCursor(timestamp),
+    ringClockSeconds: fromCursor(timestamp),
     heartRate: hr >= MIN_VALID_HR ? hr : null,
     hrvRmssdMs: sleepVitals && hrv > 0 ? hrv : null,
     signalQuality: rec[6] as number,
@@ -45,6 +49,14 @@ export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
     spo2: sleepVitals && spoRaw >= 70 && spoRaw <= 100 ? spoRaw : null,
   };
 }
+
+/**
+ * Real unix time of a record. The ring writes local wall-clock time (confirmed on a Gen 2 ring: the
+ * newest record was always ~4 min before the sync, but 4 h early when read as UTC in a UTC-4 zone).
+ * `utcOffsetMinutes` is the ring's UTC offset, east positive (US Eastern in summer: -240).
+ */
+export const recordUnixSeconds = (r: ActivityRecord, utcOffsetMinutes: number): number =>
+  r.ringClockSeconds - utcOffsetMinutes * 60;
 
 export interface Descriptor {
   batteryPercent: number;
@@ -105,14 +117,15 @@ export function bulkRemaining(data: Bytes): number | null {
 }
 
 /**
- * Split a `0x4c` bulk frame: `4c <remaining:2 BE> <record:23>...` with no XOR trailer (confirmed on
- * a Gen 2 ring: a 95-byte frame carries 4 records). Pages arrive oldest first; the header counts
+ * Split a `0x4c` bulk frame: `4c <remaining:2 BE> <record:23>... <xor>` (a 4-record frame is 96
+ * bytes; the XOR trailer is dropped when it matches). Pages arrive oldest first; the header counts
  * down to 0. The header can contain `0x0c`, so never scan for a marker byte.
  */
 export function parseBulkActivityFrame(data: Bytes): ActivityRecord[] {
   if (data.length < 3 + BULK_RECORD_LEN || data[0] !== Resp.BulkActivity) return [];
+  const end = xorBytes(data.subarray(0, data.length - 1)) === data[data.length - 1] ? data.length - 1 : data.length;
   const out: ActivityRecord[] = [];
-  for (let i = 3; i + BULK_RECORD_LEN <= data.length; i += BULK_RECORD_LEN) {
+  for (let i = 3; i + BULK_RECORD_LEN <= end; i += BULK_RECORD_LEN) {
     const rec = parseBulkActivityRecord(data.subarray(i, i + BULK_RECORD_LEN));
     if (rec) out.push(rec);
   }
