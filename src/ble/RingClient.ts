@@ -31,6 +31,7 @@ export class RingClient {
   }
 
   findRing(timeoutMs = 15000): Promise<Device> {
+    const seen = new Set<string>();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.manager.stopDeviceScan();
@@ -39,6 +40,7 @@ export class RingClient {
       this.manager.startDeviceScan(null, { allowDuplicates: false }, (err: BleError | null, dev: Device | null) => {
         if (err) { clearTimeout(timer); reject(err); return; }
         const name = dev?.name ?? dev?.localName ?? '';
+        if (dev && !seen.has(dev.id)) { seen.add(dev.id); this.log(`saw ${name || '(no name)'} ${dev.id}`); }
         if (dev && name.startsWith(DEVICE_NAME_PREFIX)) {
           clearTimeout(timer);
           this.manager.stopDeviceScan();

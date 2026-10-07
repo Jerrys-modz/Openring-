@@ -5,7 +5,9 @@ import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
 
 export default function App() {
-  const manager = useRef(new BleManager()).current;
+  const managerRef = useRef<BleManager | null>(null);
+  managerRef.current ??= new BleManager();
+  const manager = managerRef.current;
   const client = useRef<RingClient | null>(null);
   const stopHr = useRef<(() => void) | null>(null);
   const [lines, setLines] = useState<string[]>([]);
@@ -17,10 +19,13 @@ export default function App() {
 
   const connect = async () => {
     setBusy(true);
+    log('Connect pressed');
     try {
       const c = new RingClient(manager, log);
       client.current = c;
+      log(`Bluetooth state: ${await manager.state()}`);
       await c.waitForPoweredOn();
+      log('scanning for RingConn…');
       const dev = await c.findRing();
       const hex = macOverride.replace(/[^0-9a-fA-F]/g, '');
       const mac = hex.length === 12 ? Uint8Array.from(hex.match(/../g)!.map((h) => parseInt(h, 16))) : undefined;
