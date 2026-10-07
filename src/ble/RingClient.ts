@@ -3,7 +3,7 @@ import {
   DEVICE_NAME_PREFIX, DIS_SERVICE_UUID, DIS_SYSTEM_ID_UUID, NOTIFY_CHAR_UUID, Resp,
   SERVICE_UUID, WRITE_CHAR_UUID, buildAuthResponse, buildLiveHrMode, buildLiveHrPoll,
   buildCommand, macCandidatesFromSystemId, parseAuthChallenge, parseLiveHr,
-  ActivityRecord, Channel, buildAck, buildFetch, buildSyncOpen, parseBulkActivityFrame, toCursor,
+  ActivityRecord, Channel, buildAck, bulkRemaining, buildFetch, buildSyncOpen, parseBulkActivityFrame, toCursor,
 } from '../protocol';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../util/base64';
 
@@ -133,12 +133,18 @@ export class RingClient {
     let frames = 0;
     let records = 0;
     let idle = 0;
+    let remaining: number | null = null;
     for (let i = 0; i < 2000; i++) {
       const f = await this.waitFor(
         (b) => b[0] === Resp.BulkActivity || b[0] === Resp.BulkPpg || b[0] === Resp.EndOfHistory,
         2000,
       ).catch(() => null);
       if (!f) {
+        if (remaining === 0) {
+          // The page countdown finished; some rings go quiet without sending a 0x50.
+          this.log(`history: page countdown reached 0, ${frames} frames, ${records} records`);
+          return { frames, records, ended: true };
+        }
         if (++idle >= 10) break; // the awake channel answered ~25 s late in the first ring test
         await this.write(buildFetch());
         continue;
@@ -155,6 +161,7 @@ export class RingClient {
         return { frames, records, ended: true };
       }
       frames++;
+      remaining = bulkRemaining(f);
       if (f[0] === Resp.BulkActivity) {
         for (const r of parseBulkActivityFrame(f)) { records++; onRecord(r); }
       }

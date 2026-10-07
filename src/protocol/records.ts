@@ -96,8 +96,18 @@ export function parseEndOfHistory(data: Bytes): { eventCount: number } | null {
 const BULK_RECORD_LEN = 23;
 
 /**
- * Split a `0x4c` bulk frame: `4c <seq:2 BE> <record:23>...` with no XOR trailer (confirmed on a
- * Gen 2 ring: a 95-byte frame carries 4 records). Pages arrive newest first.
+ * Records still to come after this page: bytes 1-2 of a `0x47`/`0x4c` bulk frame (big-endian),
+ * counting down to 0 on the last page. Null for other frames.
+ */
+export function bulkRemaining(data: Bytes): number | null {
+  if (data.length < 3 || (data[0] !== Resp.BulkActivity && data[0] !== Resp.BulkPpg)) return null;
+  return ((data[1] as number) << 8) | (data[2] as number);
+}
+
+/**
+ * Split a `0x4c` bulk frame: `4c <remaining:2 BE> <record:23>...` with no XOR trailer (confirmed on
+ * a Gen 2 ring: a 95-byte frame carries 4 records). Pages arrive oldest first; the header counts
+ * down to 0. The header can contain `0x0c`, so never scan for a marker byte.
  */
 export function parseBulkActivityFrame(data: Bytes): ActivityRecord[] {
   if (data.length < 3 + BULK_RECORD_LEN || data[0] !== Resp.BulkActivity) return [];

@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import {
   Channel, buildAck, buildAuthResponse, buildCommand, buildFetch, buildSyncOpen, fromCursor,
-  macFromHex, parseAuthChallenge, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
+  macFromHex, parseAuthChallenge, bulkRemaining, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
   parseFrame, parseLiveHr, sm3, toCursor, xorBytes,
 } from './index';
 
@@ -170,6 +170,12 @@ describe('bulk activity frame', () => {
 
   it('accepts a 0x0d timestamp high byte', () => {
     expect(parseBulkActivityFrame(frame(1, rec(0x0d000010, 61)))[0]!.timestamp).toBe(0x0d000010);
+  });
+
+  it('reads the remaining-record countdown from bulk headers', () => {
+    expect(bulkRemaining(frame(0x0172, rec(0x0cb95abe, 60)))).toBe(0x172);
+    expect(bulkRemaining(Uint8Array.of(0x47, 0x00, 0x39))).toBe(0x39);
+    expect(bulkRemaining(Uint8Array.of(0x50, 0, 0))).toBeNull();
   });
 
   it('ignores other frame ids and short frames', () => {

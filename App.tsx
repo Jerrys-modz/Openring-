@@ -49,7 +49,8 @@ export default function App() {
     stopHr.current = null;
     setHr(null);
     try {
-      const since = Math.floor(Date.now() / 1000) - 24 * 3600;
+      // The official app opens at cursor ~ now; the ring drains whatever it has not handed off yet.
+      const since = Math.floor(Date.now() / 1000);
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
         const res = await c.drainHistory(ch, since, (r) => got.push(r), saveHistoryFrame);
