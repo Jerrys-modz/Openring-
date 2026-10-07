@@ -94,7 +94,15 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
 
           for MODE in light dark; do
+            # The switch is asynchronous and was occasionally not applied by launch time (a run
+            # produced "dark" screenshots in light mode), so wait until it reads back, then settle.
             xcrun simctl ui "$UDID" appearance "$MODE"
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+              [ "$(xcrun simctl ui "$UDID" appearance)" = "$MODE" ] && break
+              sleep 1
+            done
+            sleep 3
+            echo "Appearance is now: $(xcrun simctl ui "$UDID" appearance)"
             xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
 
             # What a fresh launch looks like. The first launch also creates the data folder.

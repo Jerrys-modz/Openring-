@@ -221,7 +221,7 @@ export default function App() {
           {tiles.map((t) => (
             <View key={t.label} style={s.tile}>
               <Text style={s.cardLabel}>{t.label}</Text>
-              <Text style={s.tileValue}>{t.value}</Text>
+              <Text style={[s.tileValue, t.value === '—' && { color: c.muted }]}>{t.value}</Text>
               <Text style={s.tileSub}>{t.sub}</Text>
             </View>
           ))}
