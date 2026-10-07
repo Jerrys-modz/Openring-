@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Button, FlatList, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
+import { ActivityRecord, Channel } from './src/protocol';
 
 export default function App() {
   const managerRef = useRef<BleManager | null>(null);
@@ -39,6 +40,29 @@ export default function App() {
     }
   };
 
+  const syncHistory = async () => {
+    const c = client.current;
+    if (!c || busy) return;
+    setBusy(true);
+    stopHr.current?.();
+    stopHr.current = null;
+    setHr(null);
+    try {
+      const since = Math.floor(Date.now() / 1000) - 24 * 3600;
+      for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
+        const got: ActivityRecord[] = [];
+        const res = await c.drainHistory(ch, since, (r) => got.push(r));
+        const counters = got.map((r) => r.counter);
+        log(`${name}: ${res.records} records in ${res.frames} frames, ended=${res.ended}` +
+          (counters.length ? `, counters ${Math.min(...counters)}..${Math.max(...counters)}` : ''));
+      }
+    } catch (e) {
+      log(`ERROR ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const disconnect = async () => {
     stopHr.current?.();
     await client.current?.disconnect();
@@ -55,6 +79,7 @@ export default function App() {
         value={macOverride} onChangeText={setMacOverride} />
       <View style={s.row}>
         <Button title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
+        <Button title="Sync history" onPress={syncHistory} disabled={busy} />
         <Button title="Disconnect" onPress={disconnect} />
       </View>
       <FlatList data={lines} keyExtractor={(_, i) => String(i)}

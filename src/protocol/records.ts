@@ -85,3 +85,27 @@ export function parseEndOfHistory(data: Bytes): { eventCount: number } | null {
   if (data.length < 3 || data[0] !== Resp.EndOfHistory) return null;
   return { eventCount: data[2] as number };
 }
+
+const BULK_RECORD_LEN = 23;
+
+/**
+ * Split a `0x4c` bulk frame into activity records. The exact page layout is not yet
+ * verified on hardware: assume the bytes after the frame id are concatenated 23-byte
+ * records, and fall back to scanning for the first `0x0c` marker if the length does not
+ * divide evenly. Callers should log the raw frame so the layout can be confirmed.
+ */
+export function parseBulkActivityFrame(data: Bytes): ActivityRecord[] {
+  if (data.length < 1 + BULK_RECORD_LEN || data[0] !== Resp.BulkActivity) return [];
+  const body = data.subarray(1);
+  let start = 0;
+  if (body.length % BULK_RECORD_LEN !== 0) {
+    start = Array.prototype.indexOf.call(body, 0x0c);
+    if (start < 0) return [];
+  }
+  const out: ActivityRecord[] = [];
+  for (let i = start; i + BULK_RECORD_LEN <= body.length; i += BULK_RECORD_LEN) {
+    const rec = parseBulkActivityRecord(body.subarray(i, i + BULK_RECORD_LEN));
+    if (rec) out.push(rec);
+  }
+  return out;
+}

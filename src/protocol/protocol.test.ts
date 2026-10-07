@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import {
   Channel, buildAck, buildAuthResponse, buildCommand, buildFetch, buildSyncOpen, fromCursor,
-  macFromHex, parseAuthChallenge, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
+  macFromHex, parseAuthChallenge, parseBulkActivityFrame, parseBulkActivityRecord, parseDescriptor, parseEndOfHistory,
   parseFrame, parseLiveHr, sm3, toCursor, xorBytes,
 } from './index';
 
@@ -145,5 +145,26 @@ describe('base64', () => {
       expect(bytesToBase64(b)).toBe(Buffer.from(b).toString('base64'));
       expect(Array.from(base64ToBytes(bytesToBase64(b)))).toEqual(Array.from(b));
     }
+  });
+});
+
+describe('bulk activity frame', () => {
+  const rec = (counter: number, hr: number) =>
+    Uint8Array.of(0x0c, (counter >> 16) & 0xff, (counter >> 8) & 0xff, counter & 0xff, hr, 0, 0, 0, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  const frame = (...recs: Uint8Array[]) => Uint8Array.from([0x4c, ...recs.flatMap((r) => Array.from(r))]);
+
+  it('splits concatenated 23-byte records', () => {
+    const out = parseBulkActivityFrame(frame(rec(1000, 60), rec(1001, 62)));
+    expect(out.map((r) => [r.counter, r.heartRate])).toEqual([[1000, 60], [1001, 62]]);
+  });
+
+  it('skips a header before the first 0x0c marker', () => {
+    const f = Uint8Array.from([0x4c, 0x01, 0x02, ...rec(5, 70)]);
+    expect(parseBulkActivityFrame(f).map((r) => r.counter)).toEqual([5]);
+  });
+
+  it('ignores other frame ids and short frames', () => {
+    expect(parseBulkActivityFrame(Uint8Array.of(0x47, 1, 2, 3))).toEqual([]);
+    expect(parseBulkActivityFrame(Uint8Array.of(0x4c))).toEqual([]);
   });
 });

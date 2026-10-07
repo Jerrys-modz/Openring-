@@ -4,9 +4,12 @@ Local-first sync for RingConn smart rings: read the ring over Bluetooth LE from 
 Expo / React Native app and write the data to Apple Health, so it flows into
 SparkyFitness (or anything else that reads HealthKit). No RingConn account or cloud.
 
-Status: **milestone 2 code written, untested on a ring** — protocol core (`src/protocol/`,
+Status: **milestone 2 verified on a RingConn Gen 2** (connect, auth, live heart rate);
+milestone 3 (history drain) is written but unverified. See `docs/HARDWARE_NOTES.md`.
+
+The code is a protocol core (`src/protocol/`,
 pure TypeScript, unit-tested) plus an Expo dev-client app that scans, reads the MAC,
-authenticates and shows live heart rate. See `docs/PLAN.md`.
+authenticates, shows live heart rate and can attempt a history drain. See `docs/PLAN.md`.
 
 ## Run it on an iPhone (no Mac needed, paid Apple Developer account required)
 ```bash
@@ -21,7 +24,8 @@ Change `ios.bundleIdentifier` in `app.config.ts` first. Take the ring off the ch
 close the RingConn app (the ring accepts one connection). The first connection triggers a
 system pairing prompt. The on-screen log shows every frame, and the System ID, so please
 share it if authentication fails: the System ID -> MAC byte order is the main unknown, so
-the client tries several candidates (or paste a MAC override).
+the client tries several candidates (or paste a MAC override). On a Gen 2 ring the
+System ID is the 6-byte MAC as-is.
 
 ## CI
 `.github/workflows/ci.yml` runs on every push/PR: typecheck, unit tests, Expo config and SDK
@@ -48,15 +52,15 @@ npm run typecheck
 ```
 
 ## Not yet verified on hardware
-The byte layouts come from public reverse-engineering notes (Gen 2 documentation; Gen 3
+The MAC format of the System ID is now confirmed (see `docs/HARDWARE_NOTES.md`). The byte layouts come from public reverse-engineering notes (Gen 2 documentation; Gen 3
 reportedly shares the service). Things to confirm on a real ring: the MAC format of the
 Device Info System ID, whether the bulk-record counter maps to time exactly as assumed,
 skin-temperature field encoding, and how bulk pages split into 23-byte records.
 
 ## Roadmap
 1. ~~Protocol core + tests~~
-2. Expo dev-client app: scan, connect, read MAC, authenticate, live HR (written, needs a ring test)
-3. History drain over both channels
+2. ~~Expo dev-client app: scan, connect, read MAC, authenticate, live HR~~ (verified on hardware)
+3. History drain over both channels ("Sync history" button written, needs a ring test)
 4. HealthKit writes with dedupe
 5. Sleep stages, resting HR
 6. Background sync

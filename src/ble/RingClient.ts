@@ -3,6 +3,7 @@ import {
   DEVICE_NAME_PREFIX, DIS_SERVICE_UUID, DIS_SYSTEM_ID_UUID, NOTIFY_CHAR_UUID, Resp,
   SERVICE_UUID, WRITE_CHAR_UUID, buildAuthResponse, buildLiveHrMode, buildLiveHrPoll,
   buildCommand, macCandidatesFromSystemId, parseAuthChallenge, parseLiveHr,
+  ActivityRecord, Channel, buildAck, buildFetch, buildSyncOpen, parseBulkActivityFrame, toCursor,
 } from '../protocol';
 import { base64ToBytes, bytesToBase64, bytesToHex } from '../util/base64';
 
@@ -111,6 +112,48 @@ export class RingClient {
       }
     })();
     return () => { running = false; };
+  }
+
+  /**
+   * Drain one history channel from `sinceUnix`. The frame flow (open, fetch, ACK each bulk
+   * frame, stop on 0x50) comes from the protocol notes and is not yet confirmed on a ring,
+   * so every frame is logged raw by `dispatch` and we re-send fetch when the ring goes quiet.
+   */
+  async drainHistory(
+    channel: Channel,
+    sinceUnix: number,
+    onRecord: (r: ActivityRecord) => void,
+  ): Promise<{ frames: number; records: number; ended: boolean }> {
+    const cursor = toCursor(sinceUnix);
+    this.log(`history: open channel ${channel} cursor ${cursor}`);
+    await this.write(buildSyncOpen(cursor, channel));
+    await this.write(buildFetch());
+    let frames = 0;
+    let records = 0;
+    let idle = 0;
+    for (let i = 0; i < 2000; i++) {
+      const f = await this.waitFor(
+        (b) => b[0] === Resp.BulkActivity || b[0] === Resp.BulkPpg || b[0] === Resp.EndOfHistory,
+        2000,
+      ).catch(() => null);
+      if (!f) {
+        if (++idle >= 3) break;
+        await this.write(buildFetch());
+        continue;
+      }
+      idle = 0;
+      if (f[0] === Resp.EndOfHistory) {
+        this.log(`history: end after ${frames} frames, ${records} records`);
+        return { frames, records, ended: true };
+      }
+      frames++;
+      if (f[0] === Resp.BulkActivity) {
+        for (const r of parseBulkActivityFrame(f)) { records++; onRecord(r); }
+      }
+      await this.write(buildAck(f[0] as number));
+    }
+    this.log(`history: stopped without end marker (${frames} frames, ${records} records)`);
+    return { frames, records, ended: false };
   }
 
   async disconnect(): Promise<void> {
