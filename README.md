@@ -23,6 +23,12 @@ system pairing prompt. The on-screen log shows every frame, and the System ID, s
 share it if authentication fails: the System ID -> MAC byte order is the main unknown, so
 the client tries several candidates (or paste a MAC override).
 
+## CI
+`.github/workflows/ci.yml` runs on every push/PR: typecheck, unit tests, Expo config and SDK
+dependency check, and an iOS prebuild that verifies the Bluetooth permission and background
+mode. `eas-build.yml` is a manual cloud build (+ optional TestFlight submit); it needs an
+`EXPO_TOKEN` repo secret. Dependabot is enabled for npm and Actions.
+
 ## TestFlight
 See `docs/TESTFLIGHT.md` for internal testing (EAS build + submit, no Mac needed).
 
