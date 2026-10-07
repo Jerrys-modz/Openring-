@@ -1,0 +1,46 @@
+name: EAS build (manual)
+
+# Runs a cloud build on EAS. Needs the EXPO_TOKEN repository secret
+# (expo.dev -> Account settings -> Access tokens). Optionally submits to TestFlight.
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: choice
+        options: [testflight, production, preview, development]
+        default: testflight
+      submit:
+        description: Submit to App Store Connect / TestFlight after the build
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck && npm test -- --ci
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build (and optionally submit)
+        env:
+          PROFILE: ${{ inputs.profile }}
+          SUBMIT: ${{ inputs.submit }}
+        run: |
+          if [ "$SUBMIT" = "true" ] && { [ "$PROFILE" = "production" ] || [ "$PROFILE" = "testflight" ]; }; then
+            eas build --platform ios --profile "$PROFILE" --non-interactive --auto-submit
+          else
+            eas build --platform ios --profile "$PROFILE" --non-interactive
+          fi

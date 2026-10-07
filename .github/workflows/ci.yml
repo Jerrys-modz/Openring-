@@ -1,11 +1,21 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  validate:
+  check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -13,4 +23,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run validate
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test -- --ci
+      - name: Expo config resolves
+        run: npx expo config --type public > /dev/null
+      - name: Dependencies match the Expo SDK
+        run: npx expo install --check
+      - name: iOS prebuild (native config sanity check)
+        run: npx expo prebuild --platform ios --no-install --clean
+      - name: Verify Bluetooth permission and background mode landed in Info.plist
+        run: |
+          grep -q NSBluetoothAlwaysUsageDescription ios/*/Info.plist
+          grep -q bluetooth-central ios/*/Info.plist

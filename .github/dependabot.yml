@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Expo pins React Native/Expo packages per SDK; only group patch/minor and
+  # leave SDK upgrades (expo, react-native, react) to a deliberate `expo install`.
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      dev-tools:
+        dependency-type: development
+    ignore:
+      - dependency-name: expo
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+      - dependency-name: react-native
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
