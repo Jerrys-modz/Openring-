@@ -180,81 +180,83 @@ export default function App() {
   const tiles: { label: string; value: string; sub: string }[] = [
     {
       label: 'Battery',
-      value: status ? `${status.batteryPercent}%` : '--',
+      value: status ? `${status.batteryPercent}%` : '—',
       sub: status ? `${(status.batteryMv / 1000).toFixed(2)} V` : 'connect to read',
     },
     {
       label: 'Skin temp',
-      value: status?.skinTempC1 != null ? `${status.skinTempC1.toFixed(1)}°` : '--',
+      value: status?.skinTempC1 != null ? `${status.skinTempC1.toFixed(1)}°` : '—',
       sub: status?.skinTempC2 != null ? `${status.skinTempC2.toFixed(1)}° second sensor` : 'celsius',
     },
-    { label: 'Steps', value: status ? String(status.stepsInBucket) : '--', sub: 'this quarter-hour' },
+    { label: 'Steps', value: status ? String(status.stepsInBucket) : '—', sub: 'this quarter-hour' },
     {
       label: 'Mode',
-      value: status ? String(status.mode) : '--',
+      value: status ? String(status.mode) : '—',
       sub: status?.charging ? 'charging' : 'raw ring mode',
     },
   ];
 
   return (
-    <SafeAreaView style={s.root}>
-      <StatusBar style="auto" />
-      <View style={s.header}>
-        <Text style={s.title}>OpenRing</Text>
-        <View style={s.pill}>
-          <View style={[s.dot, { backgroundColor: connected ? '#34C759' : c.muted }]} />
-          <Text style={s.pillText}>{demo ? 'Demo' : busy ? 'Working…' : connected ? 'Connected' : 'Not connected'}</Text>
-        </View>
-      </View>
-
-      <View style={s.card}>
-        <Text style={s.cardLabel}>Heart rate</Text>
-        <View style={s.hrRow}>
-          <Text style={[s.heart, { color: c.heart }]}>♥</Text>
-          <Text style={s.hr}>{hr ?? '--'}</Text>
-          <Text style={s.unit}>bpm</Text>
-        </View>
-      </View>
-
-      <View style={s.grid}>
-        {tiles.map((t) => (
-          <View key={t.label} style={s.tile}>
-            <Text style={s.cardLabel}>{t.label}</Text>
-            <Text style={s.tileValue}>{t.value}</Text>
-            <Text style={s.tileSub}>{t.sub}</Text>
+    <SafeAreaView style={s.safe}>
+      <View style={s.root}>
+        <StatusBar style="auto" />
+        <View style={s.header}>
+          <Text style={s.title}>OpenRing</Text>
+          <View style={s.pill}>
+            <View style={[s.dot, { backgroundColor: connected ? '#34C759' : c.muted }]} />
+            <Text style={s.pillText}>{demo ? 'Demo' : busy ? 'Working…' : connected ? 'Connected' : 'Not connected'}</Text>
           </View>
-        ))}
-      </View>
+        </View>
 
-      <TextInput
-        style={s.input}
-        placeholder="MAC override (optional, 12 hex)"
-        placeholderTextColor={c.muted}
-        autoCapitalize="none"
-        autoCorrect={false}
-        value={macOverride}
-        onChangeText={setMacOverride}
-      />
+        <View style={s.card}>
+          <Text style={s.cardLabel}>Heart rate</Text>
+          <View style={s.hrRow}>
+            <Text style={[s.heart, { color: c.heart }]}>♥</Text>
+            <Text style={[s.hr, hr === null && { color: c.muted }]}>{hr ?? '—'}</Text>
+            <Text style={s.unit}>bpm</Text>
+          </View>
+        </View>
 
-      <View style={s.row}>
-        <Btn c={c} variant="primary" title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
-        <Btn c={c} title="Sync history" onPress={syncHistory} disabled={busy || !connected} />
-        <Btn c={c} variant="danger" title="Disconnect" onPress={disconnect} disabled={!connected && !busy} />
-      </View>
-      <View style={[s.row, s.ghostRow]}>
-        <Btn c={c} variant="ghost" title="Share log" onPress={shareLog} />
-        <Btn c={c} variant="ghost" title="Frames" onPress={shareData} />
-        <Btn c={c} variant="ghost" title={`CSV (${stored})`} onPress={shareCsv} />
-        <Btn c={c} variant="ghost" title="Clear log" onPress={() => setLines([])} />
-      </View>
+        <View style={s.grid}>
+          {tiles.map((t) => (
+            <View key={t.label} style={s.tile}>
+              <Text style={s.cardLabel}>{t.label}</Text>
+              <Text style={s.tileValue}>{t.value}</Text>
+              <Text style={s.tileSub}>{t.sub}</Text>
+            </View>
+          ))}
+        </View>
 
-      <View style={[s.card, s.logCard]}>
-        <Text style={s.cardLabel}>Log</Text>
-        <FlatList
-          data={lines}
-          keyExtractor={(_, i) => String(i)}
-          renderItem={({ item }) => <Text style={s.log}>{item}</Text>}
+        <TextInput
+          style={s.input}
+          placeholder="MAC override (optional, 12 hex)"
+          placeholderTextColor={c.muted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={macOverride}
+          onChangeText={setMacOverride}
         />
+
+        <View style={s.row}>
+          <Btn c={c} variant="primary" title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
+          <Btn c={c} title="Sync history" onPress={syncHistory} disabled={busy || !connected} />
+          <Btn c={c} variant="danger" title="Disconnect" onPress={disconnect} disabled={!connected && !busy} />
+        </View>
+        <View style={[s.row, s.ghostRow]}>
+          <Btn c={c} variant="ghost" title="Share log" onPress={shareLog} />
+          <Btn c={c} variant="ghost" title="Frames" onPress={shareData} />
+          <Btn c={c} variant="ghost" title={`CSV (${stored})`} onPress={shareCsv} />
+          <Btn c={c} variant="ghost" title="Clear log" onPress={() => setLines([])} />
+        </View>
+
+        <View style={[s.card, s.logCard]}>
+          <Text style={s.cardLabel}>Log</Text>
+          <FlatList
+            data={lines}
+            keyExtractor={(_, i) => String(i)}
+            renderItem={({ item }) => <Text style={s.log}>{item}</Text>}
+          />
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -262,7 +264,9 @@ export default function App() {
 
 const makeStyles = (c: Palette) =>
   StyleSheet.create({
-    root: { flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: c.bg },
+    // SafeAreaView ignores padding on iOS, so the padding lives on an inner View.
+    safe: { flex: 1, backgroundColor: c.bg },
+    root: { flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 },
     title: { fontSize: 28, fontWeight: '700', color: c.text },
     pill: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: c.border },
