@@ -1,3 +1,4 @@
+import { File, Paths } from 'expo-file-system';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, SafeAreaView, Share, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
@@ -6,6 +7,25 @@ import { RingClient } from './src/ble/RingClient';
 import { ActivityRecord, Channel, Descriptor, recordUnixSeconds } from './src/protocol';
 import { appendRecord, loadRecordIndex, readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
 import { RecordIndex, recordsToCsv } from './src/store/recordIndex';
+
+// CI screenshots: a `demo-mode` file in the app's documents folder fills the screen with sample
+// values (a simulator has no ring and no Bluetooth). Cosmetic only: nothing is stored or sent.
+const isDemo = (): boolean => {
+  try {
+    return new File(Paths.document, 'demo-mode').exists;
+  } catch {
+    return false;
+  }
+};
+const DEMO_STATUS: Descriptor = { batteryPercent: 80, mode: 3, charging: false, stepsInBucket: 123, skinTempC1: 29.2, skinTempC2: 30.5, batteryMv: 4147 };
+const DEMO_LINES = [
+  '6:25:49 AM sleep: 4 records (4 new, 4 with HR) in 1 frames, ended=true, 1 stored',
+  '6:25:46 AM -> cc0000',
+  '6:25:45 AM history: open channel 0',
+  '6:25:29 AM authenticated',
+  '6:25:24 AM found RingConn Gen2-XXXX',
+  'DEMO MODE: sample values, not from a ring',
+];
 
 const palettes = {
   light: { bg: '#F2F2F7', card: '#FFFFFF', text: '#111113', muted: '#6B6B72', border: '#D8D8DE', accent: '#0A84FF', onAccent: '#FFFFFF', danger: '#D70015', heart: '#E5384F' },
@@ -40,17 +60,18 @@ function Btn({ title, onPress, disabled, variant = 'secondary', c }: {
 export default function App() {
   const c = palettes[useColorScheme() === 'dark' ? 'dark' : 'light'];
   const s = useMemo(() => makeStyles(c), [c]);
-  const [connected, setConnected] = useState(false);
+  const [demo] = useState(isDemo);
+  const [connected, setConnected] = useState(demo);
   const managerRef = useRef<BleManager | null>(null);
   managerRef.current ??= new BleManager();
   const manager = managerRef.current;
   const client = useRef<RingClient | null>(null);
   const stopHr = useRef<(() => void) | null>(null);
-  const [lines, setLines] = useState<string[]>([]);
-  const [hr, setHr] = useState<number | null>(null);
+  const [lines, setLines] = useState<string[]>(demo ? DEMO_LINES : []);
+  const [hr, setHr] = useState<number | null>(demo ? 72 : null);
   const [busy, setBusy] = useState(false);
   const [macOverride, setMacOverride] = useState('');
-  const [status, setStatus] = useState<Descriptor | null>(null);
+  const [status, setStatus] = useState<Descriptor | null>(demo ? DEMO_STATUS : null);
   const [index] = useState<RecordIndex>(() => {
     try {
       return loadRecordIndex();
@@ -61,6 +82,7 @@ export default function App() {
   const [stored, setStored] = useState(() => index.size);
 
   const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
+
 
   const connect = async () => {
     setBusy(true);
@@ -181,7 +203,7 @@ export default function App() {
         <Text style={s.title}>OpenRing</Text>
         <View style={s.pill}>
           <View style={[s.dot, { backgroundColor: connected ? '#34C759' : c.muted }]} />
-          <Text style={s.pillText}>{busy ? 'Working…' : connected ? 'Connected' : 'Not connected'}</Text>
+          <Text style={s.pillText}>{demo ? 'Demo' : busy ? 'Working…' : connected ? 'Connected' : 'Not connected'}</Text>
         </View>
       </View>
 
