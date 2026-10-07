@@ -8,8 +8,8 @@ on:
       profile:
         description: EAS build profile
         type: choice
-        options: [production, development]
-        default: production
+        options: [testflight, production, preview, development]
+        default: testflight
       submit:
         description: Submit to App Store Connect / TestFlight after the build
         type: boolean
@@ -39,7 +39,7 @@ jobs:
           PROFILE: ${{ inputs.profile }}
           SUBMIT: ${{ inputs.submit }}
         run: |
-          if [ "$SUBMIT" = "true" ] && [ "$PROFILE" = "production" ]; then
+          if [ "$SUBMIT" = "true" ] && { [ "$PROFILE" = "production" ] || [ "$PROFILE" = "testflight" ]; }; then
             eas build --platform ios --profile "$PROFILE" --non-interactive --auto-submit
           else
             eas build --platform ios --profile "$PROFILE" --non-interactive
