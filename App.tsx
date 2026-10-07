@@ -1,13 +1,46 @@
 import { StatusBar } from 'expo-status-bar';
-import { useRef, useState } from 'react';
-import { Button, FlatList, SafeAreaView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { FlatList, Pressable, SafeAreaView, Share, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
 import { ActivityRecord, Channel, Descriptor, recordUnixSeconds } from './src/protocol';
 import { appendRecord, loadRecordIndex, readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
 import { RecordIndex, recordsToCsv } from './src/store/recordIndex';
 
+const palettes = {
+  light: { bg: '#F2F2F7', card: '#FFFFFF', text: '#111113', muted: '#6B6B72', border: '#D8D8DE', accent: '#0A84FF', onAccent: '#FFFFFF', danger: '#D70015', heart: '#E5384F' },
+  dark: { bg: '#000000', card: '#1C1C1E', text: '#F2F2F7', muted: '#98989F', border: '#38383A', accent: '#4DA3FF', onAccent: '#001B33', danger: '#FF6961', heart: '#FF5A6E' },
+};
+type Palette = typeof palettes.light;
+
+function Btn({ title, onPress, disabled, variant = 'secondary', c }: {
+  title: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'danger' | 'ghost'; c: Palette;
+}) {
+  const filled = variant === 'primary';
+  const color = filled ? c.onAccent : variant === 'danger' ? c.danger : c.accent;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        {
+          flex: variant === 'ghost' ? undefined : 1, paddingVertical: variant === 'ghost' ? 6 : 12, paddingHorizontal: 10,
+          borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: filled ? c.accent : 'transparent',
+          borderWidth: variant === 'ghost' || filled ? 0 : 1, borderColor: variant === 'danger' ? c.danger : c.border,
+          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+        },
+      ]}
+    >
+      <Text style={{ color, fontSize: variant === 'ghost' ? 13 : 15, fontWeight: filled ? '700' : '600' }}>{title}</Text>
+    </Pressable>
+  );
+}
+
 export default function App() {
+  const c = palettes[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const s = useMemo(() => makeStyles(c), [c]);
+  const [connected, setConnected] = useState(false);
   const managerRef = useRef<BleManager | null>(null);
   managerRef.current ??= new BleManager();
   const manager = managerRef.current;
@@ -44,8 +77,10 @@ export default function App() {
       const mac = hex.length === 12 ? Uint8Array.from(hex.match(/../g)!.map((h) => parseInt(h, 16))) : undefined;
       await c.connectAndAuthenticate(dev, mac);
       stopHr.current = await c.startLiveHr(setHr);
+      setConnected(true);
     } catch (e) {
       log(`ERROR ${(e as Error).message}`);
+      setConnected(false);
       await client.current?.disconnect();
     } finally {
       setBusy(false);
@@ -116,48 +151,114 @@ export default function App() {
     stopHr.current?.();
     await client.current?.disconnect();
     setHr(null);
+    setConnected(false);
     log('disconnected');
   };
 
+  const tiles: { label: string; value: string; sub: string }[] = [
+    {
+      label: 'Battery',
+      value: status ? `${status.batteryPercent}%` : '--',
+      sub: status ? `${(status.batteryMv / 1000).toFixed(2)} V` : 'connect to read',
+    },
+    {
+      label: 'Skin temp',
+      value: status?.skinTempC1 != null ? `${status.skinTempC1.toFixed(1)}°` : '--',
+      sub: status?.skinTempC2 != null ? `${status.skinTempC2.toFixed(1)}° second sensor` : 'celsius',
+    },
+    { label: 'Steps', value: status ? String(status.stepsInBucket) : '--', sub: 'this quarter-hour' },
+    {
+      label: 'Mode',
+      value: status ? String(status.mode) : '--',
+      sub: status?.charging ? 'charging' : 'raw ring mode',
+    },
+  ];
+
   return (
     <SafeAreaView style={s.root}>
-      <StatusBar style="dark" />
-      <Text style={s.title}>OpenRing</Text>
-      <Text style={s.hr}>{hr ?? '--'} <Text style={s.unit}>bpm</Text></Text>
-      <Text style={s.status}>
-        {status
-          ? `Battery ${status.batteryPercent}% (${(status.batteryMv / 1000).toFixed(2)} V) · mode ${status.mode}${status.charging ? ' (charging)' : ''}\n` +
-            `Steps this quarter-hour ${status.stepsInBucket} · skin ${status.skinTempC1 ?? '--'} / ${status.skinTempC2 ?? '--'} °C`
-          : 'Ring status: connect to read battery, steps and skin temperature'}
-      </Text>
-      <TextInput style={s.input} placeholder="MAC override (optional, 12 hex)" placeholderTextColor="#888" autoCapitalize="none"
-        value={macOverride} onChangeText={setMacOverride} />
-      <View style={s.row}>
-        <Button title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
-        <Button title="Sync history" onPress={syncHistory} disabled={busy} />
-        <Button title="Disconnect" onPress={disconnect} />
+      <StatusBar style="auto" />
+      <View style={s.header}>
+        <Text style={s.title}>OpenRing</Text>
+        <View style={s.pill}>
+          <View style={[s.dot, { backgroundColor: connected ? '#34C759' : c.muted }]} />
+          <Text style={s.pillText}>{busy ? 'Working…' : connected ? 'Connected' : 'Not connected'}</Text>
+        </View>
       </View>
-      <View style={s.row}>
-        <Button title="Share log" onPress={shareLog} />
-        <Button title="Clear log" onPress={() => setLines([])} />
+
+      <View style={s.card}>
+        <Text style={s.cardLabel}>Heart rate</Text>
+        <View style={s.hrRow}>
+          <Text style={[s.heart, { color: c.heart }]}>♥</Text>
+          <Text style={s.hr}>{hr ?? '--'}</Text>
+          <Text style={s.unit}>bpm</Text>
+        </View>
       </View>
-      <View style={s.row}>
-        <Button title="Share frames" onPress={shareData} />
-        <Button title={`Share CSV (${stored})`} onPress={shareCsv} />
+
+      <View style={s.grid}>
+        {tiles.map((t) => (
+          <View key={t.label} style={s.tile}>
+            <Text style={s.cardLabel}>{t.label}</Text>
+            <Text style={s.tileValue}>{t.value}</Text>
+            <Text style={s.tileSub}>{t.sub}</Text>
+          </View>
+        ))}
       </View>
-      <FlatList data={lines} keyExtractor={(_, i) => String(i)}
-        renderItem={({ item }) => <Text style={s.log}>{item}</Text>} />
+
+      <TextInput
+        style={s.input}
+        placeholder="MAC override (optional, 12 hex)"
+        placeholderTextColor={c.muted}
+        autoCapitalize="none"
+        autoCorrect={false}
+        value={macOverride}
+        onChangeText={setMacOverride}
+      />
+
+      <View style={s.row}>
+        <Btn c={c} variant="primary" title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
+        <Btn c={c} title="Sync history" onPress={syncHistory} disabled={busy || !connected} />
+        <Btn c={c} variant="danger" title="Disconnect" onPress={disconnect} disabled={!connected && !busy} />
+      </View>
+      <View style={[s.row, s.ghostRow]}>
+        <Btn c={c} variant="ghost" title="Share log" onPress={shareLog} />
+        <Btn c={c} variant="ghost" title="Frames" onPress={shareData} />
+        <Btn c={c} variant="ghost" title={`CSV (${stored})`} onPress={shareCsv} />
+        <Btn c={c} variant="ghost" title="Clear log" onPress={() => setLines([])} />
+      </View>
+
+      <View style={[s.card, s.logCard]}>
+        <Text style={s.cardLabel}>Log</Text>
+        <FlatList
+          data={lines}
+          keyExtractor={(_, i) => String(i)}
+          renderItem={({ item }) => <Text style={s.log}>{item}</Text>}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, padding: 16, paddingTop: 48, backgroundColor: '#fff' },
-  title: { fontSize: 24, fontWeight: '600', color: '#000' },
-  hr: { fontSize: 56, fontWeight: '700', marginVertical: 8, color: '#000' },
-  unit: { fontSize: 18, fontWeight: '400', color: '#000' },
-  input: { borderWidth: 1, borderColor: '#999', borderRadius: 6, padding: 8, marginBottom: 8, color: '#000' },
-  row: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
-  status: { fontSize: 13, color: '#333', marginBottom: 8 },
-  log: { fontFamily: 'Menlo', fontSize: 11, color: '#000' },
-});
+const makeStyles = (c: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8, backgroundColor: c.bg },
+    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 },
+    title: { fontSize: 28, fontWeight: '700', color: c.text },
+    pill: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: c.border },
+    dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+    pillText: { fontSize: 13, color: c.text, fontWeight: '500' },
+    card: { backgroundColor: c.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: c.border, marginBottom: 10 },
+    cardLabel: { fontSize: 12, color: c.muted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },
+    hrRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+    heart: { fontSize: 28, marginRight: 8 },
+    hr: { fontSize: 64, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] },
+    unit: { fontSize: 18, color: c.muted, marginLeft: 8 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+    tile: { width: '48.5%', backgroundColor: c.card, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: c.border, marginBottom: 10 },
+    tileValue: { fontSize: 26, fontWeight: '700', color: c.text, marginTop: 4, fontVariant: ['tabular-nums'] },
+    tileSub: { fontSize: 12, color: c.muted, marginTop: 2 },
+    input: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, color: c.text, fontSize: 14 },
+    row: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+    ghostRow: { justifyContent: 'space-between', gap: 0 },
+    logCard: { flex: 1, marginBottom: 0 },
+    log: { fontFamily: 'Menlo', fontSize: 11, color: c.text, marginTop: 2 },
+  });
