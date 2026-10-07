@@ -1,22 +1,18 @@
-import { File, Paths } from 'expo-file-system';
 import { StatusBar } from 'expo-status-bar';
 import { useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, SafeAreaView, Share, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
+import { SafeAreaView, Share, StyleSheet, Text, View } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { RingClient } from './src/ble/RingClient';
+import { TabName, demoRecords, readDemoTab } from './src/demo';
 import { ActivityRecord, Channel, Descriptor, recordUnixSeconds } from './src/protocol';
+import { HistoryScreen } from './src/screens/HistoryScreen';
+import { LogScreen } from './src/screens/LogScreen';
+import { TodayScreen } from './src/screens/TodayScreen';
 import { appendRecord, loadRecordIndex, readHistoryLines, saveHistoryFrame } from './src/store/historyStore';
 import { RecordIndex, recordsToCsv } from './src/store/recordIndex';
+import { TabBar } from './src/ui/components';
+import { usePalette } from './src/ui/theme';
 
-// CI screenshots: a `demo-mode` file in the app's documents folder fills the screen with sample
-// values (a simulator has no ring and no Bluetooth). Cosmetic only: nothing is stored or sent.
-const isDemo = (): boolean => {
-  try {
-    return new File(Paths.document, 'demo-mode').exists;
-  } catch {
-    return false;
-  }
-};
 const DEMO_STATUS: Descriptor = { batteryPercent: 80, mode: 3, charging: false, stepsInBucket: 123, skinTempC1: 29.2, skinTempC2: 30.5, batteryMv: 4147 };
 const DEMO_LINES = [
   '6:25:49 AM sleep: 4 records (4 new, 4 with HR) in 1 frames, ended=true, 1 stored',
@@ -26,41 +22,18 @@ const DEMO_LINES = [
   '6:25:24 AM found RingConn Gen2-XXXX',
   'DEMO MODE: sample values, not from a ring',
 ];
-
-const palettes = {
-  light: { bg: '#F2F2F7', card: '#FFFFFF', text: '#111113', muted: '#6B6B72', border: '#D8D8DE', accent: '#0A84FF', onAccent: '#FFFFFF', danger: '#D70015', heart: '#E5384F' },
-  dark: { bg: '#000000', card: '#1C1C1E', text: '#F2F2F7', muted: '#98989F', border: '#38383A', accent: '#4DA3FF', onAccent: '#001B33', danger: '#FF6961', heart: '#FF5A6E' },
-};
-type Palette = typeof palettes.light;
-
-function Btn({ title, onPress, disabled, variant = 'secondary', c }: {
-  title: string; onPress: () => void; disabled?: boolean; variant?: 'primary' | 'secondary' | 'danger' | 'ghost'; c: Palette;
-}) {
-  const filled = variant === 'primary';
-  const color = filled ? c.onAccent : variant === 'danger' ? c.danger : c.accent;
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        {
-          flex: variant === 'ghost' ? undefined : 1, paddingVertical: variant === 'ghost' ? 6 : 12, paddingHorizontal: 10,
-          borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: filled ? c.accent : 'transparent',
-          borderWidth: variant === 'ghost' || filled ? 0 : 1, borderColor: variant === 'danger' ? c.danger : c.border,
-          opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
-        },
-      ]}
-    >
-      <Text style={{ color, fontSize: variant === 'ghost' ? 13 : 15, fontWeight: filled ? '700' : '600' }}>{title}</Text>
-    </Pressable>
-  );
-}
+const TABS: { key: TabName; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'history', label: 'History' },
+  { key: 'log', label: 'Log' },
+];
 
 export default function App() {
-  const c = palettes[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const c = usePalette();
   const s = useMemo(() => makeStyles(c), [c]);
-  const [demo] = useState(isDemo);
+  const [demoTab] = useState(readDemoTab);
+  const demo = demoTab !== null;
+  const [tab, setTab] = useState<TabName>(demoTab ?? 'today');
   const [connected, setConnected] = useState(demo);
   const managerRef = useRef<BleManager | null>(null);
   managerRef.current ??= new BleManager();
@@ -72,7 +45,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [macOverride, setMacOverride] = useState('');
   const [status, setStatus] = useState<Descriptor | null>(demo ? DEMO_STATUS : null);
+  const [lastSync, setLastSync] = useState<string | null>(demo ? '4 new records, 6:25 AM' : null);
   const [index] = useState<RecordIndex>(() => {
+    if (demo) {
+      const idx = new RecordIndex(); // demo records are never written to disk
+      demoRecords().forEach((r) => idx.add(r));
+      return idx;
+    }
     try {
       return loadRecordIndex();
     } catch {
@@ -80,9 +59,11 @@ export default function App() {
     }
   });
   const [stored, setStored] = useState(() => index.size);
+  // `stored` changes whenever the index does, so it keys the sorted copy.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const records = useMemo(() => index.sorted(), [index, stored]);
 
   const log = (line: string) => setLines((l) => [`${new Date().toLocaleTimeString()} ${line}`, ...l].slice(0, 5000));
-
 
   const connect = async () => {
     setBusy(true);
@@ -119,6 +100,7 @@ export default function App() {
     try {
       // The official app opens at cursor ~ now; the ring drains whatever it has not handed off yet.
       const since = Math.floor(Date.now() / 1000);
+      let totalFresh = 0;
       for (const [name, ch] of [['sleep', Channel.Sleep], ['awake', Channel.Awake]] as const) {
         const got: ActivityRecord[] = [];
         let fresh = 0;
@@ -130,6 +112,7 @@ export default function App() {
             fresh++;
           }
         }, saveHistoryFrame);
+        totalFresh += fresh;
         setStored(index.size);
         // The ring stores local wall-clock time; assume it is in this phone's zone.
         const offsetMin = -new Date().getTimezoneOffset();
@@ -140,6 +123,7 @@ export default function App() {
             ? `, ${new Date(Math.min(...times)).toLocaleString()} to ${new Date(Math.max(...times)).toLocaleString()}`
             : ''));
       }
+      setLastSync(`${totalFresh} new record${totalFresh === 1 ? '' : 's'}, ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
     } catch (e) {
       log(`ERROR ${(e as Error).message}`);
     } finally {
@@ -177,25 +161,6 @@ export default function App() {
     log('disconnected');
   };
 
-  const tiles: { label: string; value: string; sub: string }[] = [
-    {
-      label: 'Battery',
-      value: status ? `${status.batteryPercent}%` : '—',
-      sub: status ? `${(status.batteryMv / 1000).toFixed(2)} V` : 'connect to read',
-    },
-    {
-      label: 'Skin temp',
-      value: status?.skinTempC1 != null ? `${status.skinTempC1.toFixed(1)}°` : '—',
-      sub: status?.skinTempC2 != null ? `${status.skinTempC2.toFixed(1)}° second sensor` : 'celsius',
-    },
-    { label: 'Steps', value: status ? String(status.stepsInBucket) : '—', sub: 'this quarter-hour' },
-    {
-      label: 'Mode',
-      value: status ? String(status.mode) : '—',
-      sub: status?.charging ? 'charging' : 'raw ring mode',
-    },
-  ];
-
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.root}>
@@ -208,83 +173,51 @@ export default function App() {
           </View>
         </View>
 
-        <View style={s.card}>
-          <Text style={s.cardLabel}>Heart rate</Text>
-          <View style={s.hrRow}>
-            <Text style={[s.heart, { color: c.heart }]}>♥</Text>
-            <Text style={[s.hr, hr === null && { color: c.muted }]}>{hr ?? '—'}</Text>
-            <Text style={s.unit}>bpm</Text>
-          </View>
-        </View>
-
-        <View style={s.grid}>
-          {tiles.map((t) => (
-            <View key={t.label} style={s.tile}>
-              <Text style={s.cardLabel}>{t.label}</Text>
-              <Text style={[s.tileValue, t.value === '—' && { color: c.muted }]}>{t.value}</Text>
-              <Text style={s.tileSub}>{t.sub}</Text>
-            </View>
-          ))}
-        </View>
-
-        <TextInput
-          style={s.input}
-          placeholder="MAC override (optional, 12 hex)"
-          placeholderTextColor={c.muted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={macOverride}
-          onChangeText={setMacOverride}
-        />
-
-        <View style={s.row}>
-          <Btn c={c} variant="primary" title={busy ? 'Working…' : 'Connect'} onPress={connect} disabled={busy} />
-          <Btn c={c} title="Sync history" onPress={syncHistory} disabled={busy || !connected} />
-          <Btn c={c} variant="danger" title="Disconnect" onPress={disconnect} disabled={!connected && !busy} />
-        </View>
-        <View style={[s.row, s.ghostRow]}>
-          <Btn c={c} variant="ghost" title="Share log" onPress={shareLog} />
-          <Btn c={c} variant="ghost" title="Frames" onPress={shareData} />
-          <Btn c={c} variant="ghost" title={`CSV (${stored})`} onPress={shareCsv} />
-          <Btn c={c} variant="ghost" title="Clear log" onPress={() => setLines([])} />
-        </View>
-
-        <View style={[s.card, s.logCard]}>
-          <Text style={s.cardLabel}>Log</Text>
-          <FlatList
-            data={lines}
-            keyExtractor={(_, i) => String(i)}
-            renderItem={({ item }) => <Text style={s.log}>{item}</Text>}
-          />
+        <View style={s.body}>
+          {tab === 'today' && (
+            <TodayScreen
+              c={c}
+              hr={hr}
+              status={status}
+              connected={connected}
+              busy={busy}
+              lastSync={lastSync}
+              stored={stored}
+              onConnect={connect}
+              onSync={syncHistory}
+              onDisconnect={disconnect}
+            />
+          )}
+          {tab === 'history' && <HistoryScreen c={c} records={records} />}
+          {tab === 'log' && (
+            <LogScreen
+              c={c}
+              lines={lines}
+              macOverride={macOverride}
+              onMacOverride={setMacOverride}
+              stored={stored}
+              onShareLog={shareLog}
+              onShareFrames={shareData}
+              onShareCsv={shareCsv}
+              onClear={() => setLines([])}
+            />
+          )}
         </View>
       </View>
+      <TabBar c={c} tabs={TABS} active={tab} onChange={setTab} />
     </SafeAreaView>
   );
 }
 
-const makeStyles = (c: Palette) =>
+const makeStyles = (c: ReturnType<typeof usePalette>) =>
   StyleSheet.create({
     // SafeAreaView ignores padding on iOS, so the padding lives on an inner View.
     safe: { flex: 1, backgroundColor: c.bg },
-    root: { flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 8 },
+    root: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, marginTop: 8 },
     title: { fontSize: 28, fontWeight: '700', color: c.text },
     pill: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.card, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: c.border },
     dot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
     pillText: { fontSize: 13, color: c.text, fontWeight: '500' },
-    card: { backgroundColor: c.card, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: c.border, marginBottom: 10 },
-    cardLabel: { fontSize: 12, color: c.muted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },
-    hrRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
-    heart: { fontSize: 28, marginRight: 8 },
-    hr: { fontSize: 64, fontWeight: '700', color: c.text, fontVariant: ['tabular-nums'] },
-    unit: { fontSize: 18, color: c.muted, marginLeft: 8 },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-    tile: { width: '48.5%', backgroundColor: c.card, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: c.border, marginBottom: 10 },
-    tileValue: { fontSize: 26, fontWeight: '700', color: c.text, marginTop: 4, fontVariant: ['tabular-nums'] },
-    tileSub: { fontSize: 12, color: c.muted, marginTop: 2 },
-    input: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, color: c.text, fontSize: 14 },
-    row: { flexDirection: 'row', gap: 8, marginBottom: 8 },
-    ghostRow: { justifyContent: 'space-between', gap: 0 },
-    logCard: { flex: 1, marginBottom: 0 },
-    log: { fontFamily: 'Menlo', fontSize: 11, color: c.text, marginTop: 2 },
+    body: { flex: 1 },
   });
