@@ -100,7 +100,13 @@ export function HistoryScreen({ c, records }: { c: Palette; records: ActivityRec
             <View key={r.timestamp} style={s.row}>
               <View>
                 <Text style={s.rowTime}>{formatRingDay(r.ringClockSeconds)}, {formatRingClock(r.ringClockSeconds)}</Text>
-                <Text style={s.rowKind}>{r.kind === 'sleep-vitals' ? 'sleep vitals' : 'activity'}</Text>
+                <Text style={s.rowKind}>
+                  {[
+                    r.spo2 !== null ? `SpO2 ${r.spo2}%` : null,
+                    r.hrvRmssdMs !== null ? `HRV ${r.hrvRmssdMs} ms` : null,
+                    r.respiratoryRate !== null ? `${r.respiratoryRate.toFixed(1)} br/min` : null,
+                  ].filter(Boolean).join(' · ') || 'heart rate only'}
+                </Text>
               </View>
               <Text style={s.rowHr}>{r.heartRate !== null ? `${r.heartRate} bpm` : '—'}</Text>
             </View>

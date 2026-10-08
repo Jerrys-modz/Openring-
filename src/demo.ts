@@ -41,7 +41,10 @@ export function demoRecords(): ActivityRecord[] {
     r[3] = ts & 0xff;
     r[4] = hr;
     r[6] = 3;
-    r[8] = 0x12;
+    r[7] = 122 + (i % 6); // respiratory rate x8, about 15 to 16 breaths per minute
+    r[5] = 40 + (i % 25); // HRV (RMSSD, ms)
+    // About one record in four carries a SpO2 spot check, like the real ring.
+    r[8] = i % 4 === 1 ? 96 + (i % 4) + (i % 3) : 0x12;
     const rec = parseBulkActivityRecord(r);
     if (rec) out.push(rec);
   }

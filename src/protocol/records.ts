@@ -5,11 +5,15 @@ type Bytes = Uint8Array;
 
 const NO_SPO2 = new Set([0x11, 0x12, 0x13]);
 const MIN_VALID_HR = 30;
+/** Respiratory rate is stored x8; real values were all 101-141 (12.6 to 17.6 breaths/min). */
+const MIN_RR_RAW = 80;
+const MAX_RR_RAW = 200;
 /** About Aug 2021 in cursor space; anything earlier cannot be a real RingConn record. */
 const MIN_TIMESTAMP = 0x03000000;
 
 export interface ActivityRecord {
-  kind: 'sleep-vitals' | 'activity';
+  /** `vitals` records carry a SpO2 reading (a spot check, taken day or night); `activity` ones do not. */
+  kind: 'vitals' | 'activity';
   /** First 4 bytes of the record: big-endian seconds since the cursor epoch (confirmed on a Gen 2 ring). */
   timestamp: number;
   /** The undecoded 23 record bytes as hex, so stored data can be re-decoded if the layout turns out different. */
@@ -37,19 +41,24 @@ export function parseBulkActivityRecord(rec: Bytes): ActivityRecord | null {
   if (timestamp < MIN_TIMESTAMP) return null;
   const hr = rec[4] as number;
   const hrv = rec[5] as number;
-  const rr = (rec[7] as number) / 8;
+  const rrRaw = rec[7] as number;
   const spoRaw = rec[8] as number;
-  const sleepVitals = !NO_SPO2.has(spoRaw);
+  const hasSpo2 = !NO_SPO2.has(spoRaw);
+  // Byte 8 is the SpO2 value or an activity tag; HR, HRV and respiratory rate sit in the same
+  // places in both. Motion corrupts the upper tail of HRV, and bytes 15-19 are all zero only
+  // while the wrist is still, so an activity epoch's HRV is trusted only then (OpenCircuit
+  // PROTOCOL.md section 5.2). Respiratory rate is not motion sensitive.
+  const still = rec.subarray(15, 20).every((b) => b === 0);
   return {
-    kind: sleepVitals ? 'sleep-vitals' : 'activity',
+    kind: hasSpo2 ? 'vitals' : 'activity',
     timestamp,
     rawHex: Array.from(rec.subarray(0, 23), (b) => b.toString(16).padStart(2, '0')).join(''),
     ringClockSeconds: fromCursor(timestamp),
     heartRate: hr >= MIN_VALID_HR ? hr : null,
-    hrvRmssdMs: sleepVitals && hrv > 0 ? hrv : null,
+    hrvRmssdMs: hrv > 0 && (hasSpo2 || still) ? hrv : null,
     signalQuality: rec[6] as number,
-    respiratoryRate: sleepVitals && rr > 0 ? rr : null,
-    spo2: sleepVitals && spoRaw >= 70 && spoRaw <= 100 ? spoRaw : null,
+    respiratoryRate: rrRaw >= MIN_RR_RAW && rrRaw <= MAX_RR_RAW ? rrRaw / 8 : null,
+    spo2: hasSpo2 && spoRaw >= 70 && spoRaw <= 100 ? spoRaw : null,
   };
 }
 

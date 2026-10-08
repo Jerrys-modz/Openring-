@@ -17,7 +17,7 @@ vitals, activity, firmware). Check it against the real app before committing to 
 | A1 | Scan, connect, authenticate | ✅ |
 | A2 | Live heart rate | ✅ |
 | A3 | History drain, with ACK and end marker (sleep channel works; awake channel always empty so far) | ✅ sleep / ❓ awake |
-| A4 | Record layout and time mapping: 4-byte timestamp, 150 s apart, device-local clock | ✅ activity records; ❓ sleep-vitals records need an overnight drain |
+| A4 | Record layout and time mapping: 4-byte timestamp, 150 s apart, device-local clock | ✅ activity records; ✅ vitals (SpO2/HRV/RR) seen in daytime records; ❓ a full overnight sleep drain still not captured |
 | A5 | Status panel: battery, voltage, mode, steps bucket, skin temp (decoder checked against real frames) | 🟡 in the app, needs a device check |
 | A6 | Local store of raw frames and decoded records, deduped by timestamp, CSV export | 🟡 file-based (JSONL); SQLite later if needed |
 | A7 | Debug screen: raw frames, export log (strip MAC) | 🟡 log only |
