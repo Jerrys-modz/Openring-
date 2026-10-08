@@ -75,6 +75,30 @@ Anything not listed here is still an assumption from the protocol notes in `docs
 - The `0x50` `to` cursor trails the last delivered record, so consecutive syncs can overlap
   slightly: dedupe by timestamp when storing.
 
+## Confirmed: real records over a day (254 records, 06:24 to 21:03 ring time)
+- **SpO2 is a spot check, not a sleep-only reading.** About one record in four, roughly every
+  10 minutes from midday on, carried a SpO2 value (83 to 100, mostly 96 to 100) while the wearer
+  was awake. The old `sleep-vitals` kind was a misnomer; it is now `vitals` (has a SpO2 byte).
+  A few readings were low (83, 90, 93), so do not write SpO2 to Health until it has been checked
+  against the vendor app.
+- **HR, HRV and respiratory rate sit in the same bytes** (4, 5, 7) in `vitals` and `activity`
+  records; only byte 8 differs (SpO2 value or the `0x12`/`0x13` activity tag). OpenCircuit says HRV
+  on activity records is only trustworthy while bytes 15 to 19 are zero (still wrist); the decoder
+  now applies that rule and keeps respiratory rate on both. Respiratory rate was 15 to 17 here.
+- **Heart rate byte 4 equal to 4** marks an epoch with no measurement (ring off the finger); five
+  of them appeared. `0x11` in byte 8 appeared on two of these, so it probably means off-wrist too.
+- **Gaps and clock shifts:** the 150 s grid is regular, but after the ring is off the finger it
+  restarts on a new phase (for example :28/:58 becoming :03/:33). One gap lasted 4 h (06:36 to
+  10:39); several were 3 to 7 minutes.
+- **The record store works across app builds:** the 254 records were still there after updating.
+
+## Overnight sync that returned nothing (2026-10-08 06:01)
+- The last stored record was 21:03:58 ring time the evening before. A sync at 06:01 got the usual
+  `82 00 00 82` acknowledgement and then silence on both channels: no records, no `0x50`.
+- The ring was worn (skin temperature 35.6 C, battery 73%, live HR 58 to 60), so it was not on a
+  charger. That points to something else having taken the night first, most likely the vendor app
+  syncing in the background, since the ring has one shared resume pointer.
+
 ## Not yet confirmed
 - **Awake channel (0x03):** three drains over two sessions returned no bulk frames, even after
   a 30 s wait. Either the vendor app already drained it, or it needs something else.

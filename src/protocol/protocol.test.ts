@@ -75,10 +75,10 @@ describe('records', () => {
     return r;
   };
 
-  it('decodes sleep-vitals records', () => {
+  it('decodes vitals records (with SpO2)', () => {
     const r = parseBulkActivityRecord(record())!;
     expect(r).toMatchObject({
-      kind: 'sleep-vitals', timestamp: 0x0c000096, heartRate: 58, hrvRmssdMs: 64,
+      kind: 'vitals', timestamp: 0x0c000096, heartRate: 58, hrvRmssdMs: 64,
       respiratoryRate: 15, spo2: 97, signalQuality: 9,
     });
     expect(r.ringClockSeconds).toBe(1577793600 + 0x0c000096);
@@ -90,7 +90,28 @@ describe('records', () => {
     expect(r.kind).toBe('activity');
     expect(r.spo2).toBeNull();
     expect(r.heartRate).toBeNull();
+  });
+
+  it('keeps HRV and respiratory rate on a still activity epoch', () => {
+    // Bytes 15-19 are zero in this fixture, so the wrist was still.
+    const r = parseBulkActivityRecord(record({ 8: 0x12 }))!;
+    expect(r).toMatchObject({ kind: 'activity', spo2: null, hrvRmssdMs: 64, respiratoryRate: 15 });
+  });
+
+  it('drops HRV on a moving activity epoch but keeps respiratory rate', () => {
+    const r = parseBulkActivityRecord(record({ 8: 0x12, 17: 0x2b }))!;
     expect(r.hrvRmssdMs).toBeNull();
+    expect(r.respiratoryRate).toBe(15);
+  });
+
+  it('keeps HRV on a vitals record even when bytes 15-19 are not zero', () => {
+    expect(parseBulkActivityRecord(record({ 17: 0x2b }))!.hrvRmssdMs).toBe(64);
+  });
+
+  it('ignores implausible respiratory-rate bytes', () => {
+    expect(parseBulkActivityRecord(record({ 7: 0 }))!.respiratoryRate).toBeNull();
+    expect(parseBulkActivityRecord(record({ 7: 20 }))!.respiratoryRate).toBeNull();
+    expect(parseBulkActivityRecord(record({ 7: 127 }))!.respiratoryRate).toBeCloseTo(15.875);
   });
 
   it('rejects malformed records', () => {
