@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@kingstinct/react-native-healthkit": "^16.0.0",
-    "expo": "~57.0.27",
+    "expo": "~57.0.30",
     "expo-dev-client": "^57.0.19",
     "expo-file-system": "~57.0.7",
     "expo-status-bar": "^57.0.1",
